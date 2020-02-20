@@ -1,0 +1,39 @@
+ninja_required_version = 1.5
+
+builddir = /mnt/c/Users/Jiisuki/Dropbox/Software/testSm/bin
+basedir = /mnt/c/Users/Jiisuki/Dropbox/Software/testSm
+
+gcc_include = -I/mnt/c/Users/Jiisuki/Dropbox/Software/testSm/include -I/mnt/c/Users/Jiisuki/Dropbox/Software/testSm/src-gen
+gcc_syms = -DDEBUG
+cflags = -std=c++11 -O3 -fmessage-length=0 -Wall -Wno-unused-parameter -Wno-unused-function -Wextra -Wmissing-include-dirs -Wswitch-default
+rule configure
+    command = perl $in
+    description = Creating the build configuration
+    generator = 1
+
+rule clean
+    command = ninja -t clean
+
+rule cc
+    command = g++ -c $in $gcc_syms $gcc_include $cflags -o $out -MMD -MF $out.d
+    depfile = $out.d
+    deps = gcc
+    description = Compiling $in
+
+rule link
+    command = g++ -o $out @$out.rsp $ldflags
+    rspfile = $out.rsp
+    rspfile_content = $in_newline
+    description = Linking $out
+
+build $builddir/src/codegen.c.o : cc $basedir/src/codegen.cpp
+build $builddir/src/helper.c.o : cc $basedir/src/helper.cpp
+build $builddir/src/reader.c.o : cc $basedir/src/reader.cpp
+build $builddir/src/writer.c.o : cc $basedir/src/writer.cpp
+build $builddir/codegen : link $builddir/src/codegen.c.o $builddir/src/helper.c.o $builddir/src/reader.c.o $builddir/src/writer.c.o
+build all : phony $builddir/codegen
+build clean : clean
+build build.ninja : configure /mnt/c/Users/Jiisuki/Dropbox/Software/testSm/configure
+
+default all
+
