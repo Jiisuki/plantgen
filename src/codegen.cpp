@@ -24,74 +24,19 @@ int main(int argc, char* argv[])
     // defaults
     std::string filename;
     std::string outdir = "src-gen/src";
-    bool verbose = false;
+    bool verbose = true;
     bool doTracing = false;
-    bool isFilenameSet = false;
 
     /* Parse switches. */
-    int i = 1;
-    while (i < argc)
+    if (1 < argc)
     {
-        std::string opt = argv[i];
-
-        if ((i+1) < argc)
-        {
-            std::string val = argv[i+1];
-
-            if ((0 == opt.compare("-v")) || (0 == opt.compare("-V")))
-            {
-                if (0 != val.compare("0"))
-                {
-                    verbose = true;
-                }
-            }
-            else if ((0 == opt.compare("-i")) || (0 == opt.compare("-I")))
-            {
-                filename = val;
-                isFilenameSet = true;
-            }
-            else if ((0 == opt.compare("-o")) || (0 == opt.compare("-O")))
-            {
-                outdir = val;
-            }
-            else if ((0 == opt.compare("-t")) || (0 == opt.compare("-T")))
-            {
-                if (0 != val.compare("0"))
-                {
-                    doTracing = true;
-                }
-            }
-
-            // increment 2
-            i += 2;
-        }
-        else
-        {
-            /* Parameterless switches. */
-            if ((0 == opt.compare("-?")) || (0 == opt.compare("--help")))
-            {
-                helpinfo();
-                return (0);
-            }
-            else
-            {
-                std::cout << "Invalid parameter '" << opt << "'" << std::endl;
-            }
-
-            /* Increment 1. */
-            i += 1;
-        }
+        filename = argv[1];
     }
-
-    if (!isFilenameSet)
+    else
     {
-        ERROR_REPORT(Error, "Require input filename, try codegen -? for help.");
+        ERROR_REPORT(Error, "No filename provided!");
         return (-1);
     }
-
-    const size_t ftype_index = filename.find_last_of(".");
-
-    const std::string modelName = filename.substr(0, ftype_index);
 
     // append slash if non-existing on outdir
     if ('/' != outdir.back())
@@ -99,19 +44,20 @@ int main(int argc, char* argv[])
         outdir += "/";
     }
 
+    Reader_t* reader = new Reader_t(filename, verbose);
+    if (NULL == reader)
+    {
+        ERROR_REPORT(Error, "Allocation error");
+        return (-1);
+    }
+
+    const std::string modelName = reader->getModelName();
     std::string outfile_c = outdir + modelName + ".c";
     std::string outfile_h = outdir + modelName + ".h";
 
     if (verbose)
     {
         std::cout << "Generating code from '" << filename << "' > '" << outfile_c << "' and '" << outfile_h << "' ..." << std::endl;
-    }
-
-    Reader_t* reader = new Reader_t(filename);
-    if (NULL == reader)
-    {
-        ERROR_REPORT(Error, "Allocation error");
-        return (-1);
     }
 
     Writer_t writer;
@@ -127,50 +73,55 @@ int main(int argc, char* argv[])
     Writer_setTracing(doTracing);
 
     const size_t numStates = reader->getStateCount();
-    const size_t numEvents = reader->getEventCount();
+    const size_t numInEvents = reader->getInEventCount();
+    const size_t numOutEvents = reader->getOutEventCount();
+    const size_t numVariables = reader->getVariableCount();
+    const size_t numImports = reader->getImportCount();
+    const size_t numUmlLines = reader->getUmlLineCount();
+
     const bool isParentFirstExec = true;
 
     // write header to .h-file
     writer.out_h << "/** @file" << std::endl;
     writer.out_h << " *  @brief Interface to the " << modelName << " state machine." << std::endl;
     writer.out_h << " *" << std::endl;
-    // TODO: write ascii art here
+    writer.out_h << " *  @startuml" << std::endl;
+    for (size_t i = 0; i < numUmlLines; i++)
+    {
+        writer.out_h << " *  " << reader->getUmlLine(i) << std::endl;
+    }
+    writer.out_h << " *  @enduml" << std::endl;
     writer.out_h << " */" << std::endl << std::endl;
 
     // write required headers
-    writer.out_h << getIndent(0) << "#include <stdbool.h>" << std::endl << std::endl;
-
-    // write all states to .h
-    writer.out_h << "/** @brief State of the state machine. */" << std::endl;
-    writer.out_h << getIndent(0) << "typedef enum" << std::endl;
-    writer.out_h << getIndent(0) << "{" << std::endl;
-    for (size_t i = 0; i < numStates; i++)
+    writer.out_h << getIndent(0) << "#include <stdint.h>" << std::endl;
+    writer.out_h << getIndent(0) << "#include <stdbool.h>" << std::endl;
+    for (size_t i = 0; i < numImports; i++)
     {
-        State_t* state = reader->getState(i);
-        if (NULL != state)
+        Import_t* imp = reader->getImport(i);
+        writer.out_h << getIndent(0) << "#include ";
+        if (imp->isGlobal)
         {
-            writer.out_h << getIndent(1) << getStateName(reader, modelName, state) << "," << std::endl;
+            writer.out_h << "<" << imp->name << ">" << std::endl;
+        }
+        else
+        {
+            writer.out_h << "\"" << imp->name << "\"" << std::endl;
         }
     }
-    writer.out_h << getIndent(0) << "} " << modelName << "_State_t;" << std::endl << std::endl;
-
-    // write all event types
-    writer.out_h << getIndent(0) << "typedef struct" << std::endl;
-    writer.out_h << getIndent(0) << "{" << std::endl;
-    for (size_t i = 0; i < numEvents; i++)
-    {
-        Event_t* ev = reader->getEvent(i);
-        writer.out_h << getIndent(1) << "bool " << ev->name << ";" << std::endl;
-    }
-    writer.out_h << getIndent(0) << "} " << modelName << "_EventList_t;" << std::endl;
     writer.out_h << std::endl;
 
-    // write internal structure
-    writer.out_h << getIndent(0) << "typedef struct" << std::endl;
-    writer.out_h << getIndent(0) << "{" << std::endl;
-    writer.out_h << getIndent(1) << modelName << "_State_t state;" << std::endl;
-    writer.out_h << getIndent(1) << modelName << "_EventList_t events;" << std::endl;
-    writer.out_h << getIndent(0) << "} " << modelName << "_t;" << std::endl << std::endl;
+    // write all states to .h
+    writeDeclaration_stateList(&writer, reader, numStates, modelName);
+
+    // write all event types
+    writeDeclaration_eventList(&writer, reader, numInEvents, modelName);
+
+    // write all variables
+    writeDeclaration_variableList(&writer, reader, numVariables, modelName);
+
+    // write main declaration
+    writeDeclaration_stateMachine(&writer, reader, modelName);
 
     // write handle
     writer.out_h << "typedef " << modelName << "_t* " << getHandleName(modelName) << ";" << std::endl << std::endl;
@@ -190,18 +141,34 @@ int main(int argc, char* argv[])
     writer.out_h << "void " << modelName << "_init(" << getHandleName(modelName) << " handle);" << std::endl << std::endl;
 
     // write all raise event function prototypes
-    for (size_t i = 0; i < numEvents; i++)
+    if (verbose)
     {
-        Event_t* ev = reader->getEvent(i);
-        writer.out_h << "/** @brief Raise the " << ev->name << " event in the state machine. */" << std::endl;
-        writer.out_h << getIndent(0) << "void " << getEventRaise(reader, modelName, ev) << "(" << getHandleName(modelName) << " handle);" << std::endl << std::endl;
+        std::cout << "Writing raise in event prototypes..." << std::endl;
     }
+    writePrototype_raiseInEvent(&writer, reader, numInEvents, modelName);
+
+    // write all get raised events prototypes
+    // TODO
+    (void) numOutEvents;
 
     // write header to .c
     writer.out_c << getIndent(0) << "#include <stdint.h>" << std::endl;
     writer.out_c << getIndent(0) << "#include <stdbool.h>" << std::endl;
     writer.out_c << getIndent(0) << "#include \"" << modelName << ".h\"" << std::endl;
     // TODO: write imports
+    for (size_t i = 0; i < reader->getImportCount(); i++)
+    {
+        Import_t* imp = reader->getImport(i);
+        writer.out_c << getIndent(0) << "#include ";
+        if (imp->isGlobal)
+        {
+            writer.out_c << "<" << imp->name << ">" << std::endl;
+        }
+        else
+        {
+            writer.out_c << "\"" << imp->name << "\"" << std::endl;
+        }
+    }
     writer.out_c << std::endl;
 
 
@@ -228,7 +195,7 @@ int main(int argc, char* argv[])
 
     // find first state on init
     std::cout << "Searching for initial state..." << std::endl;
-    const State_t* firstState = findInitState(reader, numStates, modelName);
+    const std::vector<State_t*> firstState = findInitState(reader, numStates, modelName);
 
     // write init implementation
     std::cout << "Writing implementation for state machine init..." << std::endl;
@@ -236,11 +203,11 @@ int main(int argc, char* argv[])
 
     // write all raise event functions
     std::cout << "Writing implementations for raising events..." << std::endl;
-    writeImplementation_raiseEvent(&writer, reader, numEvents, modelName);
+    writeImplementation_raiseInEvent(&writer, reader, numInEvents, modelName);
 
     // write implementation that clears all ingoing events
     std::cout << "Writing implementation for clearing incoming events..." << std::endl;
-    writeImplementation_clearInEvents(&writer, reader, numEvents, modelName);
+    writeImplementation_clearInEvents(&writer, reader, numInEvents, modelName);
 
     // write implementation of the topmost run cycle handler
     std::cout << "Writing implementation for top run cycle..." << std::endl;

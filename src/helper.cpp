@@ -5,6 +5,8 @@
 #include <helper.hpp>
 #include <reader.hpp>
 
+#define USE_SIMPLE_NAMES
+
 void errorReport(const Error_t severity, std::string str, unsigned int line)
 {
     switch (severity)
@@ -30,12 +32,16 @@ std::string getStateBaseDecl(Reader_t* reader, const State_t* state)
 {
     std::string decl_base = "";
 
+#ifndef USE_SIMPLE_NAMES
     // parent nesting
     State_t* parent = reader->getStateById(state->parent);
     if (NULL != parent)
     {
         decl_base = getStateBaseDecl(reader, parent) + "_";
     }
+#else
+    (void) reader;
+#endif
 
     decl_base += state->name;
 
@@ -81,7 +87,7 @@ std::string getStateName(Reader_t* reader, const std::string modelName, const St
 std::string getEventRaise(Reader_t* reader, const std::string modelName, const Event_t* event)
 {
     (void) reader;
-    std::string str = modelName + "_" + event->name + "_raise";
+    std::string str = modelName + "_raise" + event->name;
     return (str);
 }
 
@@ -103,83 +109,120 @@ std::string getTraceCall_exit(const std::string modelName)
     return (str);
 }
 
-State_t* findEntryState(Reader_t* reader, const std::string modelName, State_t* in)
+std::vector<State_t*> findEntryState(Reader_t* reader, const std::string modelName, State_t* in)
 {
     // this function will check if the in state contains an initial sub-state,
     // and follow the path until a state is reached that does not contain an
     // initial sub-state.
-    State_t* finalState = in;
+    std::vector<State_t*> states;
+    states.push_back(in);
 
     // check if the state contains any initial sub-state
-    for (size_t i = 0; i < reader->getStateCount(); i++)
+    bool foundNext = true;
+    while (foundNext)
     {
-        State_t* tmp = reader->getState(i);
-        if ((in->id != tmp->id) && (in->id == tmp->parent) && (0 == tmp->name.compare("initial")))
+        foundNext = false;
+        for (size_t i = 0; i < reader->getStateCount(); i++)
         {
-            // a child state was found that is an initial state. Get transition
-            // from this initial state, it should be one and only one.
-            Transition_t* tr = reader->getTransitionFrom(tmp->id, 0);
-            if (NULL == tr)
+            State_t* tmp = reader->getState(i);
+            if ((in->id != tmp->id) && (in->id == tmp->parent) && (0 == tmp->name.compare("initial")))
             {
-                ERROR_REPORT(Error, "Initial state in [" + getStateName(reader, modelName, in) + "] as no transitions.");
-            }
-            else
-            {
-                // get the transition
-                tmp = reader->getStateById(tr->stB);
-                if (NULL == tmp)
+                // a child state was found that is an initial state. Get transition
+                // from this initial state, it should be one and only one.
+                Transition_t* tr = reader->getTransitionFrom(tmp->id, 0);
+                if (NULL == tr)
                 {
-                    ERROR_REPORT(Error, "Initial state in [" + getStateName(reader, modelName, in) + "] has null target.");
+                    ERROR_REPORT(Error, "Initial state in [" + getStateName(reader, modelName, in) + "] as no transitions.");
                 }
                 else
                 {
-                    // recursively check the state
-                    finalState = findEntryState(reader, modelName, tmp);
+                    // get the transition
+                    tmp = reader->getStateById(tr->stB);
+                    if (NULL == tmp)
+                    {
+                        ERROR_REPORT(Error, "Initial state in [" + getStateName(reader, modelName, in) + "] has null target.");
+                    }
+                    else
+                    {
+                        // recursively check the state, we can do this by
+                        // exiting the for loop but continuing from the top.
+                        states.push_back(tmp);
+                        in = tmp;
+
+                        // if the state is a choice, we need to stop here.
+                        if (tmp->isChoice)
+                        {
+                            foundNext = false;
+                        }
+                        else
+                        {
+                            foundNext = true;
+                        }
+                    }
                 }
             }
         }
     }
 
-    return (finalState);
+    return (states);
 }
 
-State_t* findFinalState(Reader_t* reader, const std::string modelName, State_t* in)
+std::vector<State_t*> findFinalState(Reader_t* reader, const std::string modelName, State_t* in)
 {
     // this function will check if the in state has an outgoing transition to
     // a final state and follow the path until a state is reached that does not
     // contain an initial sub-state.
-    State_t* finalState = in;
+    (void) modelName;
+
+    std::vector<State_t*> states;
+    states.push_back(in);
 
     // find parent to this state
-    for (size_t i = 0; i < reader->getStateCount(); i++)
+    bool foundNext = true;
+    while (foundNext)
     {
-        State_t* tmp = reader->getState(i);
-        if ((in->id != tmp->id) && (in->parent == tmp->id) && (0 != tmp->name.compare("initial")))
+        foundNext = false;
+        for (size_t i = 0; i < reader->getStateCount(); i++)
         {
-            // a parent state was found that is not an initial state. Check for
-            // any outgoing transitions from this state to a final state. Store
-            // the id of the tmp state, since we will reuse this pointer.
-            const State_Id_t tmpId = tmp->id;
-            for (size_t j = 0; j < reader->getTransitionCountFromStateId(tmpId); j++)
+            State_t* tmp = reader->getState(i);
+            if ((in->id != tmp->id) && (in->parent == tmp->id) && (0 != tmp->name.compare("initial")))
             {
-                Transition_t* tr = reader->getTransitionFrom(tmp->id, j);
-                tmp = reader->getStateById(tr->stB);
-                if ((NULL != tmp) && (0 == tmp->name.compare("final")))
+                // a parent state was found that is not an initial state. Check for
+                // any outgoing transitions from this state to a final state. Store
+                // the id of the tmp state, since we will reuse this pointer.
+                const State_Id_t tmpId = tmp->id;
+                for (size_t j = 0; j < reader->getTransitionCountFromStateId(tmpId); j++)
                 {
-                    // recursively check the state
-                    finalState = findFinalState(reader, modelName, tmp);
-                    break; // for
+                    Transition_t* tr = reader->getTransitionFrom(tmp->id, j);
+                    tmp = reader->getStateById(tr->stB);
+                    if ((NULL != tmp) && (0 == tmp->name.compare("final")))
+                    {
+                        // recursively check the state
+                        states.push_back(tmp);
+                        in = tmp;
+
+                        // if this state is a choice, we need to stop there.
+                        if (tmp->isChoice)
+                        {
+                            foundNext = false;
+                        }
+                        else
+                        {
+                            foundNext = true;
+                        }
+                    }
                 }
             }
         }
     }
 
-    return (finalState);
+    return (states);
 }
 
-State_t* findInitState(Reader_t* reader, const size_t nStates, const std::string modelName)
+std::vector<State_t*> findInitState(Reader_t* reader, const size_t nStates, const std::string modelName)
 {
-    State_t* firstState = NULL;
+    std::vector<State_t*> states;
+
     for (size_t i = 0; i < nStates; i++)
     {
         State_t* state = reader->getState(i);
@@ -205,14 +248,14 @@ State_t* findInitState(Reader_t* reader, const size_t nStates, const std::string
                     else
                     {
                         // get state where it stops.
-                        firstState = findEntryState(reader, modelName, trStB);
+                        states = findEntryState(reader, modelName, trStB);
                     }
                 }
             }
         }
     }
 
-    return (firstState);
+    return (states);
 }
 
 std::string getIndent(const size_t level)

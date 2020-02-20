@@ -13,6 +13,7 @@ typedef struct
     State_Id_t id;
     std::string name;
     State_Id_t parent;
+    bool isChoice;
 } State_t;
 
 typedef enum
@@ -20,6 +21,7 @@ typedef enum
     Declaration_Entry,
     Declaration_Exit,
     Declaration_OnCycle,
+    Declaration_Comment,
 } Declaration_t;
 
 typedef struct
@@ -32,6 +34,8 @@ typedef struct
 typedef struct
 {
     std::string name;
+    bool requireParameter;
+    std::string parameterType;
 } Event_t;
 
 typedef struct
@@ -39,20 +43,16 @@ typedef struct
     State_Id_t stA;
     State_Id_t stB;
     Event_t event;
+    bool hasGuard;
+    std::string guard;
 } Transition_t;
-
-typedef struct
-{
-    bool isPrivate;
-    std::string type;
-    std::string prototype;
-} Function_t;
 
 typedef struct
 {
     bool isPrivate;
     std::string name;
     std::string type;
+    bool specificInitialValue;
     std::string initialValue;
 } Variable_t;
 
@@ -65,34 +65,39 @@ typedef struct
 class Reader_t
 {
     private:
+        bool verbose;
         std::ifstream in;
         std::string modelName;
         std::vector<State_t> states;
-        std::vector<Event_t> events;
+        std::vector<Event_t> inEvents;
+        std::vector<Event_t> outEvents;
         std::vector<Transition_t> transitions;
         std::vector<State_Declaration_t> stateDeclarations;
-        std::vector<Function_t> functions;
         std::vector<Variable_t> variables;
         std::vector<Import_t> imports;
+        std::vector<std::string> uml;
         void collectStates(void);
         void collectEvents(void);
         std::vector<std::string> tokenize(std::string str);
         State_Id_t addState(State_t newState);
-        void addEvent(const Event_t newEvent);
+        void addInEvent(const Event_t newEvent);
+        void addOutEvent(const Event_t newEvent);
         void addTransition(const Transition_t newTransition);
         void addDeclaration(const State_Declaration_t newDecl);
-        void addFunction(const Function_t newFunc);
         void addVariable(const Variable_t newVar);
         void addImport(const Import_t newImp);
+        void addUmlLine(const std::string line);
+        size_t indentLevel;
+        std::string getIndent(void);
 
     public:
-        Reader_t(std::string filename);
+        Reader_t(std::string filename, const bool verbose);
         ~Reader_t();
 
         std::string getModelName(void);
 
-        size_t getFunctionCount(void);
-        Function_t* getFunction(const size_t id);
+        size_t getUmlLineCount(void);
+        std::string getUmlLine(const size_t i);
 
         size_t getVariableCount(void);
         Variable_t* getVariable(const size_t id);
@@ -104,8 +109,11 @@ class Reader_t
         State_t* getState(const size_t id);
         State_t* getStateById(const State_Id_t id);
 
-        size_t getEventCount(void);
-        Event_t* getEvent(const size_t id);
+        size_t getInEventCount(void);
+        Event_t* getInEvent(const size_t id);
+
+        size_t getOutEventCount(void);
+        Event_t* getOutEvent(const size_t id);
 
         size_t getTransitionCountFromStateId(const State_Id_t id);
         Transition_t* getTransitionFrom(const State_Id_t id, const size_t trId);

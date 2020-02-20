@@ -15,12 +15,18 @@ void writePrototype_runCycle(Writer_t* writer, Reader_t* reader, const size_t nS
 void writePrototype_react(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
 void writePrototype_entryAction(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
 void writePrototype_exitAction(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
+void writePrototype_raiseInEvent(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
 
 void writePrototype_traceEntry(Writer_t* writer, const std::string modelName);
 void writePrototype_traceExit(Writer_t* writer, const std::string modelName);
 
-void writeImplementation_init(Writer_t* writer, Reader_t* reader, const State_t* firstState, const std::string modelName);
-void writeImplementation_raiseEvent(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
+void writeDeclaration_stateList(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
+void writeDeclaration_eventList(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
+void writeDeclaration_variableList(Writer_t* writer, Reader_t* reader, const size_t nVariables, const std::string modelName);
+void writeDeclaration_stateMachine(Writer_t* writer, Reader_t* reader, const std::string modelName);
+
+void writeImplementation_init(Writer_t* writer, Reader_t* reader, const std::vector<State_t*> firstState, const std::string modelName);
+void writeImplementation_raiseInEvent(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
 void writeImplementation_clearInEvents(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
 void writeImplementation_topRunCycle(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
 void writeImplementation_runCycle(Writer_t* writer, Reader_t* reader, const size_t nStates, const bool isParentFirstExec, const std::string modelName);

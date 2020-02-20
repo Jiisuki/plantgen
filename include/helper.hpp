@@ -26,9 +26,9 @@ std::string getHandleName(const std::string modelName);
 std::string getTraceCall_entry(const std::string modelName);
 std::string getTraceCall_exit(const std::string modelName);
 
-State_t* findEntryState(Reader_t* reader, const std::string modelName, State_t* in);
-State_t* findFinalState(Reader_t* reader, const std::string modelName, State_t* in);
-State_t* findInitState(Reader_t* reader, const size_t nStates, const std::string modelName);
+std::vector<State_t*> findEntryState(Reader_t* reader, const std::string modelName, State_t* in);
+std::vector<State_t*> findFinalState(Reader_t* reader, const std::string modelName, State_t* in);
+std::vector<State_t*> findInitState(Reader_t* reader, const size_t nStates, const std::string modelName);
 
 std::string getIndent(const size_t level);
 std::string getIfElseIf(const size_t i);
