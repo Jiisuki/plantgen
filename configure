@@ -1,0 +1,227 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use File::Find::Rule;
+use Cwd;
+
+# ==============================================================================
+# Configuration script for debug build.
+# ==============================================================================
+my $project = "codegen";
+
+# Setup absolute file paths:
+my $currentdir = getcwd();
+my $builddir = "$currentdir/bin";
+my $basedir = Cwd::abs_path("./");
+
+# Specify compilation symbols for C language.
+my @c_symbols = (
+    "DEBUG",
+);
+
+# Specify include folders for C language.
+my @c_include = (
+    "include",
+    "src-gen",
+);
+
+# Specify source directories.
+my @src_dirs = (
+    "src",
+    "src-gen",
+);
+
+# ==============================================================================
+# Below is the automatic generation script of the build.ninja file.
+# Don't modify unless you know what you are doing.
+# ==============================================================================
+# Create the build directory
+unless (-e $builddir or mkdir $builddir)
+{
+    die "Unable to create $builddir\n";
+}
+
+my $outfile = "build.ninja";
+my $configurefile = "$currentdir/configure";
+
+# Try to open the output file, otherwise stop.
+open(OUTFILE, "> $outfile") or die "Failed to open $outfile. $!\n";
+
+# Create list of defines.
+my $gcc_syms = join(" ", map "-D$_", @c_symbols);
+
+# Create the list of include folders.
+my $gcc_inc = join(" ", map "-I$basedir/$_", @c_include);
+
+# Setup warning flags
+my $c_dialect = "-std=c++11";
+my $c_optimisation = "-O3";
+my @c_warning_list = (
+    "all",
+    "no-unused-parameter",
+    "no-unused-function",
+    "extra",
+    "missing-include-dirs",
+    "switch-default"
+);
+
+my $c_compiler = "g++";
+
+my $c_warnings = join(" ", map "-W$_", @c_warning_list);
+
+my $cflags = "$c_dialect $c_optimisation -fmessage-length=0 $c_warnings";
+my $ldflags = "-static-libgcc -static-libstdc++";
+
+# Select the output file as stdout.
+my $stdout = select(OUTFILE);
+
+# Write required version.
+print "ninja_required_version = 1.5\n\n";
+
+# Write build directory, this is required to place the log files in correct place.
+print "builddir = $builddir\n";
+print "basedir = $basedir\n\n";
+
+# Write include directories.
+print "gcc_include = $gcc_inc\n";
+print "gcc_syms = $gcc_syms\n";
+print "cflags = $cflags\n";
+
+# Write build rules for the configuration.
+print "rule configure\n";
+print "    command = perl \$in\n";
+print "    description = Creating the build configuration\n";
+print "    generator = 1\n\n";
+
+print "rule clean\n";
+print "    command = ninja -t clean\n\n";
+
+print "rule cc\n";
+print "    command = $c_compiler -c \$in \$gcc_syms \$gcc_include \$cflags -o \$out -MMD -MF \$out.d\n";
+print "    depfile = \$out.d\n";
+print "    deps = gcc\n";
+print "    description = Compiling \$in\n\n";
+
+print "rule link\n";
+print "    command = $c_compiler -o \$out @\$out.rsp \$ldflags\n";
+print "    rspfile = \$out.rsp\n";
+print "    rspfile_content = \$in_newline\n";
+print "    description = Linking \$out\n\n";
+
+# Allocate an array for all the compiled files.
+my @output_objects;
+
+# Write all build commands.
+for my $src_dir (@src_dirs)
+{
+    # Find all c files.
+    my @files_c = File::Find::Rule->file()
+        ->name("*.c", "*.cpp")
+        ->maxdepth(1)
+        ->in("$basedir/$src_dir");
+
+    for my $in (@files_c)
+    {
+        my $in_short = substr($in, length($basedir) + 1, length($in) - length($basedir));
+        my $out = substr($in_short, 0, length($in_short) - 2);
+        push(@output_objects, "\$builddir/$out.o");
+        print "build \$builddir/$out.o : cc \$basedir/$in_short\n";
+    }
+}
+
+# Write the linker operation.
+my $object_files = join(" ", @output_objects);
+print "build \$builddir/$project : link $object_files\n";
+
+# Write special build commands.
+print "build all : phony \$builddir/$project\n";
+print "build clean : clean\n";
+print "build build.ninja : configure $configurefile\n\n";
+
+print "default all\n\n";
+
+# Close the file.
+close(OUTFILE);
+
+################################################################################
+# Write configuration for VIM - YouCompleteMe
+#
+# This configuration aids the programmer to naviage the entire code base and
+# detect issues in the live validation, with the speed of Vim.
+################################################################################
+my $vim_extra = "$basedir/.ycm_extra_conf.py";
+open(OUTFILE, "> $vim_extra") or die "Failed to open $vim_extra. $!\n";
+
+select(OUTFILE);
+print "import os\n";
+print "import ycm_core\n";
+print "\n";
+print "flags = [\n";
+print "'$c_dialect',\n";
+print "'-x', 'c++',\n";
+# Print the path to the system include, that is the include folder for ARM,
+# since that is what we work with in this project.
+print "'-isystem', '/usr/include',\n";
+print "'-isystem', '/usr/local/include',\n";
+# Print all the warning/error flags.
+for my $wflag (@c_warning_list)
+{
+    print "'-W$wflag',\n";
+}
+# Print all the include directories in the code base.
+for my $inc (@c_include)
+{
+    my $inc_abs = Cwd::abs_path("$basedir/$inc");
+    print "'-I$inc_abs',\n";
+}
+# Print all the symbols/defines.
+for my $def (@c_symbols)
+{
+    print "'-D$def',\n";
+}
+print "]\n";
+print "\n";
+print "compilation_database_folder = ''\n";
+print "if os.path.exists(compilation_database_folder):\n";
+print "  database = ycm_core.CompilationDatabase(compilation_database_folder)\n";
+print "else:\n";
+print "  database = None\n";
+print "\n";
+print "SOURCE_EXTENSIONS = ['.cpp']\n";
+print "\n";
+print "def DirectoryOfThisScript():\n";
+print "  return os.path.dirname(os.path.abspath(__file__))\n";
+print "\n";
+print "def IsHeaderFile(filename):\n";
+print "  extension = os.path.splitext(filename)[1]\n";
+print "  return extension in ['.h', '.hpp']\n";
+print "\n";
+print "def GetCompilationInfoForFile(filename):\n";
+print "  if IsHeaderFile(filename):\n";
+print "    basename = os.path.splitext(filename)[0]\n";
+print "    for extension in SOURCE_EXTENSIONS:\n";
+print "      replacement_file = basename + extension\n";
+print "      if os.path.exists(replacement_file):\n";
+print "        compilation_info = database.GetCompilationInfoForFile(replacement_file)\n";
+print "        if compilation_info.compiler_flags_:\n";
+print "          return compilation_info\n";
+print "    return None\n";
+print "  return database.GetCompilationInfoForFile(filename)";
+print "\n";
+print "def FlagsForFile(filename, **kwargs):\n";
+print "  if not database:\n";
+print "    return {\n";
+print "      'flags': flags,\n";
+print "      'include_paths_relative_to_dir': DirectoryOfThisScript()\n";
+print "    }\n";
+print "  compilation_info = GetCompilationInfoForFile(filename)\n";
+print "  if not compilation_info:\n";
+print "    return None\n";
+print "  return {\n";
+print "    'flags': list(compilation_info.compiler_flags_),\n";
+print "    'include_paths_relative_to_dir': compilation_info.compiler_working_dir_\n";
+print "  }\n";
+print "\n";
+close(OUTFILE);
+
