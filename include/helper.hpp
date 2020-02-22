@@ -18,7 +18,6 @@ std::string getStateRunCycle(Reader_t* reader, const std::string modelName, cons
 std::string getStateReact(Reader_t* reader, const std::string modelName, const State_t* state);
 std::string getStateEntry(Reader_t* reader, const std::string modelName, const State_t* state);
 std::string getStateExit(Reader_t* reader, const std::string modelName, const State_t* state);
-std::string getStateOnCycle(Reader_t* reader, const std::string modelName, const State_t* state);
 std::string getStateName(Reader_t* reader, const std::string modelName, const State_t* state);
 std::string getEventRaise(Reader_t* reader, const std::string modelName, const Event_t* event);
 std::string getHandleName(const std::string modelName);

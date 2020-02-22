@@ -96,6 +96,7 @@ int main(int argc, char* argv[])
     // write required headers
     writer.out_h << getIndent(0) << "#include <stdint.h>" << std::endl;
     writer.out_h << getIndent(0) << "#include <stdbool.h>" << std::endl;
+    writer.out_h << getIndent(0) << "#include <stddef.h>" << std::endl;
     for (size_t i = 0; i < numImports; i++)
     {
         Import_t* imp = reader->getImport(i);
@@ -115,7 +116,7 @@ int main(int argc, char* argv[])
     writeDeclaration_stateList(&writer, reader, numStates, modelName);
 
     // write all event types
-    writeDeclaration_eventList(&writer, reader, numInEvents, modelName);
+    writeDeclaration_eventList(&writer, reader);
 
     // write all variables
     writeDeclaration_variableList(&writer, reader, numVariables, modelName);
@@ -140,6 +141,9 @@ int main(int argc, char* argv[])
     writer.out_h << "/** @brief Initialises the state machine. */" << std::endl;
     writer.out_h << "void " << modelName << "_init(" << getHandleName(modelName) << " handle);" << std::endl << std::endl;
 
+    // write time tick function
+    writePrototype_timeTick(&writer, reader);
+
     // write all raise event function prototypes
     if (verbose)
     {
@@ -154,6 +158,7 @@ int main(int argc, char* argv[])
     // write header to .c
     writer.out_c << getIndent(0) << "#include <stdint.h>" << std::endl;
     writer.out_c << getIndent(0) << "#include <stdbool.h>" << std::endl;
+    writer.out_c << getIndent(0) << "#include <stddef.h>" << std::endl;
     writer.out_c << getIndent(0) << "#include \"" << modelName << ".h\"" << std::endl;
     // TODO: write imports
     for (size_t i = 0; i < reader->getImportCount(); i++)
@@ -174,16 +179,17 @@ int main(int argc, char* argv[])
 
     // declare prototypes for global run cycle, clear in events.
     writer.out_c << "static void runCycle(" << getHandleName(modelName) << " handle);" << std::endl;
-    writer.out_c << "static void clearInEvents(" << getHandleName(modelName) << " handle);" << std::endl;
-    writer.out_c << std::endl;
+    writePrototype_clearEvents(&writer, reader);
 
     // declare prototypes for run cycle
     std::cout << "Writing prototypes for state run cycles..." << std::endl;
     writePrototype_runCycle(&writer, reader, numStates, modelName);
 
+#if 0
     // declare prototypes for react
     std::cout << "Writing prototypes for state reactions..." << std::endl;
     writePrototype_react(&writer, reader, numStates, modelName);
+#endif
 
     // declare prototypes for entry actions
     std::cout << "Writing prototypes for state entry actions..." << std::endl;
@@ -205,9 +211,13 @@ int main(int argc, char* argv[])
     std::cout << "Writing implementations for raising events..." << std::endl;
     writeImplementation_raiseInEvent(&writer, reader, numInEvents, modelName);
 
+    // write time tick function
+    std::cout << "Writing implementation for time tick..." << std::endl;
+    writeImplementation_timeTick(&writer, reader);
+
     // write implementation that clears all ingoing events
     std::cout << "Writing implementation for clearing incoming events..." << std::endl;
-    writeImplementation_clearInEvents(&writer, reader, numInEvents, modelName);
+    writeImplementation_clearEvents(&writer, reader);
 
     // write implementation of the topmost run cycle handler
     std::cout << "Writing implementation for top run cycle..." << std::endl;
@@ -217,15 +227,16 @@ int main(int argc, char* argv[])
     std::cout << "Writing implementation for all state run cycles..." << std::endl;
     writeImplementation_runCycle(&writer, reader, numStates, isParentFirstExec, modelName);
 
+#if 0
     // write state reactions
     std::cout << "Writing parent state reactions..." << std::endl;
     writeImplementation_reactions(&writer, reader, numStates, modelName);
+#endif
 
     // write state entry/exit/oncycle actions
     std::cout << "Writing state actions..." << std::endl;
     writeImplementation_entryAction(&writer, reader, numStates, modelName);
     writeImplementation_exitAction(&writer, reader, numStates, modelName);
-    writeImplementation_oncycleAction(&writer, reader, numStates, modelName);
 
     /* end with a new line. */
     writer.out_c << std::endl;

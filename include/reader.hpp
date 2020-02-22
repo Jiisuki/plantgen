@@ -31,11 +31,21 @@ typedef struct
     std::string declaration;
 } State_Declaration_t;
 
+typedef enum
+{
+    Incoming,
+    Outgoing,
+} Event_Direction_t;
+
 typedef struct
 {
     std::string name;
     bool requireParameter;
     std::string parameterType;
+    bool isTimeEvent;
+    Event_Direction_t direction;
+    size_t expireTime_ms;
+    bool isPeriodic;
 } Event_t;
 
 typedef struct
@@ -69,8 +79,7 @@ class Reader_t
         std::ifstream in;
         std::string modelName;
         std::vector<State_t> states;
-        std::vector<Event_t> inEvents;
-        std::vector<Event_t> outEvents;
+        std::vector<Event_t> events;
         std::vector<Transition_t> transitions;
         std::vector<State_Declaration_t> stateDeclarations;
         std::vector<Variable_t> variables;
@@ -80,15 +89,12 @@ class Reader_t
         void collectEvents(void);
         std::vector<std::string> tokenize(std::string str);
         State_Id_t addState(State_t newState);
-        void addInEvent(const Event_t newEvent);
-        void addOutEvent(const Event_t newEvent);
+        void addEvent(const Event_t newEvent);
         void addTransition(const Transition_t newTransition);
         void addDeclaration(const State_Declaration_t newDecl);
         void addVariable(const Variable_t newVar);
         void addImport(const Import_t newImp);
         void addUmlLine(const std::string line);
-        size_t indentLevel;
-        std::string getIndent(void);
 
     public:
         Reader_t(std::string filename, const bool verbose);
@@ -102,6 +108,12 @@ class Reader_t
         size_t getVariableCount(void);
         Variable_t* getVariable(const size_t id);
 
+        size_t getPrivateVariableCount(void);
+        Variable_t* getPrivateVariable(const size_t id);
+
+        size_t getPublicVariableCount(void);
+        Variable_t* getPublicVariable(const size_t id);
+
         size_t getImportCount(void);
         Import_t* getImport(const size_t id);
 
@@ -111,6 +123,9 @@ class Reader_t
 
         size_t getInEventCount(void);
         Event_t* getInEvent(const size_t id);
+
+        size_t getTimeEventCount(void);
+        Event_t* getTimeEvent(const size_t id);
 
         size_t getOutEventCount(void);
         Event_t* getOutEvent(const size_t id);

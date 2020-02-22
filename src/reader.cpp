@@ -10,7 +10,6 @@
 Reader_t::Reader_t(std::string filename, const bool verbose)
 {
     this->verbose = verbose;
-    this->indentLevel = 0;
     this->in.open(filename);
     if (true != this->in.is_open())
     {
@@ -70,6 +69,70 @@ Variable_t* Reader_t::getVariable(const size_t id)
     return (var);
 }
 
+size_t Reader_t::getPrivateVariableCount(void)
+{
+    size_t nPrivate = 0;
+    for (size_t i = 0; i < this->variables.size(); i++)
+    {
+        if (this->variables[i].isPrivate)
+        {
+            nPrivate++;
+        }
+    }
+    return (nPrivate);
+}
+
+Variable_t* Reader_t::getPrivateVariable(const size_t id)
+{
+    Variable_t* var = NULL;
+    size_t n = 0;
+    for (size_t i = 0; i < this->variables.size(); i++)
+    {
+        if (this->variables[i].isPrivate)
+        {
+            if (id == n)
+            {
+                var = &this->variables[i];
+                break;
+            }
+            n++;
+        }
+    }
+    return (var);
+}
+
+size_t Reader_t::getPublicVariableCount(void)
+{
+    size_t nPublic = 0;
+    for (size_t i = 0; i < this->variables.size(); i++)
+    {
+        if (!this->variables[i].isPrivate)
+        {
+            nPublic++;
+        }
+    }
+    return (nPublic);
+}
+
+Variable_t* Reader_t::getPublicVariable(const size_t id)
+{
+    Variable_t* var = NULL;
+    size_t n = 0;
+    for (size_t i = 0; i < this->variables.size(); i++)
+    {
+        if (!this->variables[i].isPrivate)
+        {
+            if (id == n)
+            {
+                var = &this->variables[i];
+                break;
+            }
+            n++;
+        }
+    }
+    return (var);
+}
+
 // public
 size_t Reader_t::getImportCount(void)
 {
@@ -124,33 +187,99 @@ State_t* Reader_t::getStateById(const State_Id_t id)
 // public
 size_t Reader_t::getInEventCount(void)
 {
-    return (this->inEvents.size());
+    size_t nEvents = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (!this->events[i].isTimeEvent && (Incoming == this->events[i].direction))
+        {
+            nEvents++;
+        }
+    }
+    return (nEvents);
 }
 
 // public
 Event_t* Reader_t::getInEvent(size_t id)
 {
     Event_t* event = NULL;
-    if (id < this->inEvents.size())
+    size_t n = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
     {
-        event = &this->inEvents[id];
+        if (!this->events[i].isTimeEvent && (Incoming == this->events[i].direction))
+        {
+            if (id == n)
+            {
+                event = &this->events[id];
+                break;
+            }
+            n++;
+        }
     }
     return (event);
+}
+
+size_t Reader_t::getTimeEventCount(void)
+{
+    size_t nEvents = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (this->events[i].isTimeEvent)
+        {
+            nEvents++;
+        }
+    }
+    return (nEvents);
+}
+
+Event_t* Reader_t::getTimeEvent(const size_t id)
+{
+    Event_t* ev = NULL;
+    size_t n = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (this->events[i].isTimeEvent)
+        {
+            if (id == n)
+            {
+                ev = &this->events[i];
+                break;
+            }
+            n++;
+        }
+    }
+    return (ev);
 }
 
 // public
 size_t Reader_t::getOutEventCount(void)
 {
-    return (this->outEvents.size());
+    size_t nEvents = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (!this->events[i].isTimeEvent && (Outgoing == this->events[i].direction))
+        {
+            nEvents++;
+        }
+    }
+    return (nEvents);
 }
 
 // public
 Event_t* Reader_t::getOutEvent(size_t id)
 {
     Event_t* event = NULL;
-    if (id < this->outEvents.size())
+    size_t n = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
     {
-        event = &this->outEvents[id];
+        if (!this->events[i].isTimeEvent && (Outgoing == this->events[i].direction))
+        {
+            if (id == n)
+            {
+                event = &this->events[id];
+                break;
+            }
+            n++;
+        }
     }
     return (event);
 }
@@ -247,7 +376,6 @@ void Reader_t::collectStates(void)
 
     std::vector<State_Id_t> parentNesting;
     State_Id_t parentState = 0;
-    bool isParentActive = false;
 
     std::string str;
     bool isuml = false;
@@ -303,7 +431,7 @@ void Reader_t::collectStates(void)
 
                         if (this->verbose)
                         {
-                            std::cout << this->getIndent() << "Model name detected: " << this->modelName << std::endl;
+                            std::cout << "Model name detected: " << this->modelName << std::endl;
                         }
                     }
                     else if ((0 == tokens[0].compare("import")) && (3 <= tokens.size()))
@@ -343,6 +471,11 @@ void Reader_t::collectStates(void)
                     {
                         Event_t newEvent;
                         newEvent.name = tokens[2];
+                        // time config
+                        newEvent.isTimeEvent = false;
+                        newEvent.expireTime_ms = 0;
+                        newEvent.isPeriodic = false;
+
                         if (5 == tokens.size())
                         {
                             newEvent.requireParameter = true;
@@ -353,14 +486,17 @@ void Reader_t::collectStates(void)
                             newEvent.requireParameter = false;
                             newEvent.parameterType = "";
                         }
+
                         if (0 == tokens[0].compare("in"))
                         {
-                            this->addInEvent(newEvent);
+                            newEvent.direction = Incoming;
                         }
                         else
                         {
-                            this->addOutEvent(newEvent);
+                            newEvent.direction = Outgoing;
                         }
+
+                        this->addEvent(newEvent);
                     }
                 }
             }
@@ -431,11 +567,15 @@ void Reader_t::collectStates(void)
                         ev.name = "null";
                         ev.parameterType = "";
                         ev.requireParameter = false;
+                        ev.isTimeEvent = false;
+                        ev.expireTime_ms = 0;
+                        ev.isPeriodic = false;
 
                         Transition_t tr;
                         tr.stA = idA;
                         tr.stB = idB;
                         tr.hasGuard = false;
+                        tr.guard = "";
 
                         if ((4 < numTokens) && (0 == tokens[3].compare(":")))
                         {
@@ -452,20 +592,71 @@ void Reader_t::collectStates(void)
                             }
                             else
                             {
-                                // transition is on event.
-                                ev.name = tokens[4];
-
-                                if ((5 < numTokens) && ('[' == tokens[5].front()))
+                                // check for timed event
+                                if ((0 == tokens[4].compare("after")) || (0 == tokens[4].compare("every")))
                                 {
-                                    // guard on transition.
-                                    tr.hasGuard = true;
-                                    std::string guardStr = tokens[5];
-                                    for (size_t i = 6; i < tokens.size(); i++)
+                                    // S1 -> S2 : after X u [Y]
+                                    // 0  1  2  3 4     5 6 7 - index
+                                    // 1  2  3  4 5     6 7 8 - count
+                                    ev.isTimeEvent = true;
+                                    ev.name = A.name + "_" + tokens[4] + "_";
+                                    // append time unit to time event name
+                                    for (size_t i = 5; i < std::min(tokens.size(), (size_t) 7); i++)
                                     {
-                                        guardStr += " " + tokens[i];
+                                        ev.name += tokens[i];
                                     }
-                                    tr.guard = guardStr.substr(1, guardStr.length()-2);
+
+                                    if (6 < numTokens)
+                                    {
+                                        size_t multiplier = 1;
+                                        if (0 == tokens[6].compare("s"))
+                                        {
+                                            multiplier = 1000;
+                                        }
+                                        else if (0 == tokens[6].compare("min"))
+                                        {
+                                            multiplier = 60000;
+                                        }
+
+                                        ev.expireTime_ms = multiplier * ((size_t) std::stoul(tokens[5]));
+
+                                        if ((7 < numTokens) && ('[' == tokens[7].front()))
+                                        {
+                                            // guard on transition
+                                            tr.hasGuard = true;
+                                            std::string guardStr = tokens[7];
+                                            // get remainding guard string
+                                            for (size_t i = 8; i < tokens.size(); i++)
+                                            {
+                                                guardStr += " " + tokens[i];
+                                            }
+                                            tr.guard = guardStr.substr(1, guardStr.length()-2);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        std::cout << "ERROR: No time specified on time event." << std::endl;
+                                        // TODO: Error.
+                                    }
                                 }
+                                else
+                                {
+                                    // normal event
+                                    ev.name = tokens[4];
+                                    if ((5 < numTokens) && ('[' == tokens[5].front()))
+                                    {
+                                        // guard on transition.
+                                        tr.hasGuard = true;
+                                        std::string guardStr = tokens[5];
+                                        for (size_t i = 6; i < tokens.size(); i++)
+                                        {
+                                            guardStr += " " + tokens[i];
+                                        }
+                                        tr.guard = guardStr.substr(1, guardStr.length()-2);
+                                    }
+                                }
+                                // add the event
+                                this->addEvent(ev);
                             }
                         }
 
@@ -543,227 +734,11 @@ void Reader_t::collectStates(void)
                             }
                         }
                     }
-                }
-#if 0
-                if (5 <= tokens.size())
-                {
-                    // possible format
-                    // S1 -> S2 : EV
-                    if (isTrArrow(tokens[1]) && (0 == tokens[3].compare(":")))
-                    {
-                        // add index 0 and 2 as states
-                        State_t stA;
-                        stA.name = tokens[0];
-                        stA.parent = parentState;
-                        State_Id_t addrA = this->addState(stA);
 
-                        State_t stB;
-                        stB.name = (0 == tokens[2].compare("[*]")) ? "final" : tokens[2];
-                        stB.parent = parentState;
-                        State_Id_t addrB = this->addState(stB);
-
-                        if ('[' == tokens[4].front())
-                        {
-                            // guard only transition
-                            Event_t event;
-                            event.name = "null";
-                            event.requireParameter = false;
-                            event.parameterType = "";
-
-                            Transition_t tr;
-                            tr.stA = addrA;
-                            tr.stB = addrB;
-                            tr.event = event;
-
-                            // check for guard
-                            if (4 < tokens.size())
-                            {
-                                std::string guardStr = tokens[4];
-                                for (size_t i = 5; i < tokens.size(); i++)
-                                {
-                                    guardStr += " " + tokens[i];
-                                }
-                                tr.guard = guardStr.substr(1, guardStr.length()-2);
-                                tr.hasGuard = true;
-                            }
-                            else
-                            {
-                                tr.guard = "";
-                                tr.hasGuard = false;
-                            }
-
-                            this->addTransition(tr);
-                        }
-                        else
-                        {
-                            // add event
-                            Event_t event;
-                            event.name = tokens[4];
-                            event.requireParameter = false;
-                            event.parameterType = "";
-                            this->addInEvent(event);
-
-                            // add transition
-                            Transition_t tr;
-                            tr.stA = addrA;
-                            tr.stB = addrB;
-                            tr.event = event;
-
-                            // check for guard
-                            if (5 < tokens.size())
-                            {
-                                std::string guardStr = tokens[5];
-                                for (size_t i = 6; i < tokens.size(); i++)
-                                {
-                                    guardStr += " " + tokens[i];
-                                }
-                                tr.guard = guardStr.substr(1, guardStr.length()-2);
-                                tr.hasGuard = true;
-                            }
-                            else
-                            {
-                                tr.guard = "";
-                                tr.hasGuard = false;
-                            }
-
-                            if (this->verbose)
-                            {
-                                if (tr.hasGuard)
-                                {
-                                    std::cout << "with guard." << std::endl;
-                                }
-                                else
-                                {
-                                    std::cout << std::endl;
-                                }
-                            }
-
-                            this->addTransition(tr);
-                        }
-                    }
-                    // S : en/ex : body
-                    else if ((0 == tokens[1].compare(":")) && (0 == tokens[3].compare("/")))
-                    {
-                        // fetch the state to attach the body.
-                        for (size_t i = 0; i < this->states.size(); i++)
-                        {
-                            State_t* state = &this->states[i];
-                            if (0 == state->name.compare(tokens[0]))
-                            {
-                                // assuming no duplicate states within a state, this
-                                // should be fine.
-                                State_Declaration_t decl;
-
-                                // decode keyword
-                                bool isValid = true;
-                                if (0 == tokens[2].compare("entry"))
-                                {
-                                    decl.type = Declaration_Entry;
-                                }
-                                else if (0 == tokens[2].compare("exit"))
-                                {
-                                    decl.type = Declaration_Exit;
-                                }
-                                else if (0 == tokens[2].compare("oncycle"))
-                                {
-                                    decl.type = Declaration_OnCycle;
-                                }
-                                else
-                                {
-                                    // invalid keyword
-                                    isValid = false;
-                                }
-
-                                if (isValid)
-                                {
-                                    // return to raw string and fetch all until end
-                                    size_t trim = str.find_first_of("/");
-                                    decl.stateId = state->id;
-                                    std::string tmpStr = str.substr(trim+1);
-                                    // trim beginning/end
-                                    trim = tmpStr.find_first_not_of(" ");
-                                    decl.declaration = tmpStr.substr(trim);
-                                    this->addDeclaration(decl);
-                                }
-
-                                break; // for
-                            }
-                        }
-                    }
-                }
-                if (3 <= tokens.size())
-                {
-                    // possible formats:
-                    // S1 -> S2
-                    if (isTrArrow(tokens[1]))
-                    {
-                        // add index 0 and 2 as states
-                        State_t stA;
-                        stA.name = (0 == tokens[0].compare("[*]")) ? "initial" : tokens[0];
-                        stA.parent = parentState;
-                        State_Id_t addrA = this->addState(stA);
-
-                        State_t stB;
-                        stB.name = (0 == tokens[2].compare("[*]")) ? "final" : tokens[2];
-                        stB.parent = parentState;
-                        State_Id_t addrB = this->addState(stB);
-
-                        // add null transition
-                        Event_t ev;
-                        ev.name = "null";
-                        ev.requireParameter = false;
-                        ev.parameterType = "";
-
-                        Transition_t tr;
-                        tr.event = ev;
-                        tr.stA = addrA;
-                        tr.stB = addrB;
-                        tr.guard = "";
-                        tr.hasGuard = false;
-
-                        this->addTransition(tr);
-                    }
-                    // state X
-                    else if (0 == tokens[0].compare("state"))
-                    {
-                        // state X <<choice>>
-                        if (0 == tokens[2].compare("<<choice>>"))
-                        {
-                            State_t stA;
-                            stA.name = tokens[1];
-                            stA.parent = parentState;
-                            stA.isChoice = true;
-                            this->addState(stA);
-                        }
-                        else if (0 == tokens[2].compare("{"))
-                        {
-                            // add index 1 as state
-                            State_t stA;
-                            stA.name = tokens[1];
-                            stA.parent = parentState;
-                            stA.isChoice = false;
-                            State_Id_t addrA = this->addState(stA);
-
-                            if (this->verbose)
-                            {
-                                std::cout << this->getIndent() << tokens[1] << " {" << std::endl;
-                            }
-
-                            // push back nesting
-                            if (isParentActive)
-                            {
-                                parentNesting.push_back(parentState);
-                            }
-                            parentState = addrA;
-                            isParentActive = true;
-                            this->indentLevel++;
-                        }
-                    }
-                }
-                else if (1 == tokens.size())
-                {
-                    // possible end of x
-                    if (0 == tokens[0].compare("}"))
+                    // =========================================================
+                    // CLOSE STATE (parent)
+                    // =========================================================
+                    else if (0 == tokens[0].compare("}"))
                     {
                         // pop back parent nesting
                         if (0 < parentNesting.size())
@@ -774,28 +749,9 @@ void Reader_t::collectStates(void)
                         else
                         {
                             parentState = 0;
-                            isParentActive = false;
-                        }
-
-                        if (0 < this->indentLevel)
-                        {
-                            this->indentLevel--;
-                        }
-
-                        if (this->verbose)
-                        {
-                            std::cout << this->getIndent() << "}" << std::endl;
-#if 0
-                            if ((0 != parentState) && (isParentActive))
-                            {
-                                State_t* st = this->getStateById(parentState);
-                                std::cout << this->getIndent() << "New parent: " << st->name << std::endl;
-                            }
-#endif
                         }
                     }
                 }
-#endif
             }
         }
     }
@@ -852,62 +808,27 @@ State_Id_t Reader_t::addState(State_t newState)
 
             if (this->verbose)
             {
-                std::cout << this->getIndent() << "Added new state " << newState.name << " [id = " << newState.id << "]" << std::endl;
+                std::cout << "NEW STATE: " << newState.name << ", id = " << newState.id << ", parent = " << newState.parent << std::endl;
             }
         }
     }
     return (newId);
 }
 
-void Reader_t::addInEvent(const Event_t newEvent)
+void Reader_t::addEvent(const Event_t newEvent)
 {
-    if (0 == this->inEvents.size())
+    if (0 == this->events.size())
     {
         // just add the first
-        this->inEvents.push_back(newEvent);
-    }
-    else
-    {
-        // look for duplicate
-        std::string dupEvStr = "";
-        bool isFound = false;
-        for (size_t i = 0; i < this->inEvents.size(); i++)
-        {
-            if (0 == this->inEvents[i].name.compare(newEvent.name))
-            {
-                isFound = true;
-                dupEvStr = this->inEvents[i].name;
-                break; // for
-            }
-        }
-
-        if (!isFound)
-        {
-            // new event
-            this->inEvents.push_back(newEvent);
-
-            if (this->verbose)
-            {
-                std::cout << this->getIndent() << "Added new incoming event " << newEvent.name << std::endl;
-            }
-        }
-    }
-}
-
-void Reader_t::addOutEvent(const Event_t newEvent)
-{
-    if (0 == this->outEvents.size())
-    {
-        // just add the first
-        this->outEvents.push_back(newEvent);
+        this->events.push_back(newEvent);
     }
     else
     {
         // look for duplicate
         bool isFound = false;
-        for (size_t i = 0; i < this->outEvents.size(); i++)
+        for (size_t i = 0; i < this->events.size(); i++)
         {
-            if (0 == this->outEvents[i].name.compare(newEvent.name))
+            if (0 == this->events[i].name.compare(newEvent.name))
             {
                 isFound = true;
                 break; // for
@@ -917,11 +838,15 @@ void Reader_t::addOutEvent(const Event_t newEvent)
         if (!isFound)
         {
             // new event
-            this->outEvents.push_back(newEvent);
+            this->events.push_back(newEvent);
 
             if (this->verbose)
             {
-                std::cout << this->getIndent() << "Added new outgoing event " << newEvent.name << std::endl;
+                std::string type = (newEvent.isTimeEvent) ?
+                    "time" : (Incoming == newEvent.direction) ?
+                        "incoming" : "outgoing";
+
+                std::cout << "Added new (" << type << ") event " << newEvent.name << std::endl;
             }
         }
     }
@@ -938,8 +863,7 @@ void Reader_t::addTransition(const Transition_t newTransition)
         std::string stateA = (NULL == A) ? "NULL" : A->name;
         std::string stateB = (NULL == B) ? "NULL" : B->name;
         std::string guardDesc = (newTransition.hasGuard) ? (" with guard [" + newTransition.guard + "]") : "";
-        std::cout << this->getIndent()
-                  << "Added transition "
+        std::cout << "Added transition "
                   << stateA
                   << " --> "
                   << stateB
@@ -971,7 +895,7 @@ void Reader_t::addDeclaration(const State_Declaration_t newDecl)
         {
             type = "OnCycle";
         }
-        std::cout << this->getIndent() << "Wrote " << type << " declaration for state " << name << std::endl;
+        std::cout << "Wrote " << type << " declaration for state " << name << std::endl;
     }
 }
 
@@ -981,7 +905,7 @@ void Reader_t::addVariable(const Variable_t newVar)
 
     if (this->verbose)
     {
-        std::cout << this->getIndent() << "Found variable " << newVar.type << " " << newVar.name;
+        std::cout << "Found variable " << newVar.type << " " << newVar.name;
         if (newVar.specificInitialValue)
         {
             std::cout << " = " << newVar.initialValue << std::endl;
@@ -999,7 +923,7 @@ void Reader_t::addImport(const Import_t newImp)
 
     if (this->verbose)
     {
-        std::cout << this->getIndent() << "Found import ";
+        std::cout << "Found import ";
         if (newImp.isGlobal)
         {
             std::cout << "<" << newImp.name << ">" << std::endl;
@@ -1028,13 +952,4 @@ std::vector<std::string> Reader_t::tokenize(std::string str)
     return (tokens);
 }
 
-std::string Reader_t::getIndent(void)
-{
-    std::string str = "";
-    for (size_t i = 0; i < this->indentLevel; i++)
-    {
-        str += "  ";
-    }
-    return (str);
-}
 

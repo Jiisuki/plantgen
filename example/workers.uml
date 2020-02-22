@@ -1,0 +1,55 @@
+@startuml
+'scale 0.75
+
+header
+model workers
+import global example.h
+in event allocate : char
+in event start
+in event stop
+in event rest
+public var work : char
+public var isWorking : bool = false
+endheader
+
+[*] -> idle
+idle : entry / ${work} = 'I'
+idle : exit / logstr("Allocating workers")
+idle -> allocated : allocate
+allocated : entry / ${work} = ${allocate}
+allocated : exit / logstr("Send workers")
+allocated -down-> worker : start
+
+state worker {
+    state which <<choice>>
+    [*] -> which
+    which -down-> workA
+    state workA {
+        [*] -> workingA
+        workA : Worker A is assigned
+        workingA : entry / ${isWorking} = true
+        workingA : exit / ${isWorking} = false
+        workingA -> restingA : rest
+        restingA -> workingA : start
+    }
+    workA : exit / logstr("Work A is closed")
+    which -> workB : ['B' == ${work}]
+    state workB {
+        [*] -> workingB
+        workB : Worker B is assigned
+        workingB : entry / ${isWorking} = true
+        workingB : exit / ${isWorking} = false
+        workingB -> restingB : rest
+        state restingB {
+            [*] -> Coffee
+            Coffee : exit / logstr("Finished Coffee")
+        }
+        restingB -> workingB : start
+    }
+    workB : exit / logstr("Work B is closed")
+}
+worker : entry / logstr("Workshop open")
+worker : exit / logstr("Workshop closed")
+
+worker -> idle : stop
+@enduml

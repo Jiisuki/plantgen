@@ -72,12 +72,6 @@ std::string getStateExit(Reader_t* reader, const std::string modelName, const St
     return (str);
 }
 
-std::string getStateOnCycle(Reader_t* reader, const std::string modelName, const State_t* state)
-{
-    std::string str = modelName + "_" + getStateBaseDecl(reader, state) + "_onCycle";
-    return (str);
-}
-
 std::string getStateName(Reader_t* reader, const std::string modelName, const State_t* state)
 {
     std::string str = modelName + "_State_" + getStateBaseDecl(reader, state);
@@ -87,7 +81,7 @@ std::string getStateName(Reader_t* reader, const std::string modelName, const St
 std::string getEventRaise(Reader_t* reader, const std::string modelName, const Event_t* event)
 {
     (void) reader;
-    std::string str = modelName + "_raise" + event->name;
+    std::string str = modelName + "_raise_" + event->name;
     return (str);
 }
 
