@@ -151,6 +151,18 @@ int main(int argc, char* argv[])
     }
     writePrototype_raiseInEvent(&writer, reader, numInEvents, modelName);
 
+    if (verbose)
+    {
+        std::cout << "Writing get raised outgoing event prototypes..." << std::endl;
+    }
+    writePrototype_checkOutEvent(&writer, reader);
+
+    if (verbose)
+    {
+        std::cout << "Writing variable get functions..." << std::endl;
+    }
+    writePrototype_getVariable(&writer, reader);
+
     // write all get raised events prototypes
     // TODO
     (void) numOutEvents;
@@ -185,12 +197,6 @@ int main(int argc, char* argv[])
     std::cout << "Writing prototypes for state run cycles..." << std::endl;
     writePrototype_runCycle(&writer, reader, numStates, modelName);
 
-#if 0
-    // declare prototypes for react
-    std::cout << "Writing prototypes for state reactions..." << std::endl;
-    writePrototype_react(&writer, reader, numStates, modelName);
-#endif
-
     // declare prototypes for entry actions
     std::cout << "Writing prototypes for state entry actions..." << std::endl;
     writePrototype_entryAction(&writer, reader, numStates, modelName);
@@ -198,6 +204,10 @@ int main(int argc, char* argv[])
     // declare prototypes for exit actions
     std::cout << "Writing prototypes for state exit actions..." << std::endl;
     writePrototype_exitAction(&writer, reader, numStates, modelName);
+
+    // declare prototypes for raising outgoing events
+    std::cout << "Writing prototypes for raising outgoing events..." << std::endl;
+    writePrototype_raiseOutEvent(&writer, reader);
 
     // find first state on init
     std::cout << "Searching for initial state..." << std::endl;
@@ -210,6 +220,14 @@ int main(int argc, char* argv[])
     // write all raise event functions
     std::cout << "Writing implementations for raising events..." << std::endl;
     writeImplementation_raiseInEvent(&writer, reader, numInEvents, modelName);
+
+    // write all raise event functions
+    std::cout << "Writing implementations for checking outgoing events..." << std::endl;
+    writeImplementation_checkOutEvent(&writer, reader);
+
+    // write all get variable functions
+    std::cout << "Writing implementations for reading public variables..." << std::endl;
+    writeImplementation_getVariable(&writer, reader);
 
     // write time tick function
     std::cout << "Writing implementation for time tick..." << std::endl;
@@ -227,16 +245,14 @@ int main(int argc, char* argv[])
     std::cout << "Writing implementation for all state run cycles..." << std::endl;
     writeImplementation_runCycle(&writer, reader, numStates, isParentFirstExec, modelName);
 
-#if 0
-    // write state reactions
-    std::cout << "Writing parent state reactions..." << std::endl;
-    writeImplementation_reactions(&writer, reader, numStates, modelName);
-#endif
-
     // write state entry/exit/oncycle actions
     std::cout << "Writing state actions..." << std::endl;
     writeImplementation_entryAction(&writer, reader, numStates, modelName);
     writeImplementation_exitAction(&writer, reader, numStates, modelName);
+
+    // write implementation for raising outgoing events
+    std::cout << "Writing implementation for raising outgoing events..." << std::endl;
+    writeImplementation_raiseOutEvent(&writer, reader);
 
     /* end with a new line. */
     writer.out_c << std::endl;

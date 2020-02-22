@@ -201,7 +201,6 @@ size_t Reader_t::getInEventCount(void)
 // public
 Event_t* Reader_t::getInEvent(size_t id)
 {
-    Event_t* event = NULL;
     size_t n = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
@@ -209,13 +208,12 @@ Event_t* Reader_t::getInEvent(size_t id)
         {
             if (id == n)
             {
-                event = &this->events[id];
-                break;
+                return (&this->events[i]);
             }
             n++;
         }
     }
-    return (event);
+    return (NULL);
 }
 
 size_t Reader_t::getTimeEventCount(void)
@@ -233,7 +231,6 @@ size_t Reader_t::getTimeEventCount(void)
 
 Event_t* Reader_t::getTimeEvent(const size_t id)
 {
-    Event_t* ev = NULL;
     size_t n = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
@@ -241,13 +238,12 @@ Event_t* Reader_t::getTimeEvent(const size_t id)
         {
             if (id == n)
             {
-                ev = &this->events[i];
-                break;
+                return (&this->events[i]);
             }
             n++;
         }
     }
-    return (ev);
+    return (NULL);
 }
 
 // public
@@ -267,7 +263,6 @@ size_t Reader_t::getOutEventCount(void)
 // public
 Event_t* Reader_t::getOutEvent(size_t id)
 {
-    Event_t* event = NULL;
     size_t n = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
@@ -275,13 +270,12 @@ Event_t* Reader_t::getOutEvent(size_t id)
         {
             if (id == n)
             {
-                event = &this->events[id];
-                break;
+                return (&this->events[i]);
             }
             n++;
         }
     }
-    return (event);
+    return (NULL);
 }
 
 // public
@@ -565,6 +559,7 @@ void Reader_t::collectStates(void)
 
                         Event_t ev;
                         ev.name = "null";
+                        ev.direction = Incoming; // assume default
                         ev.parameterType = "";
                         ev.requireParameter = false;
                         ev.isTimeEvent = false;
@@ -668,6 +663,8 @@ void Reader_t::collectStates(void)
                     // =========================================================
                     // STATE ACTION # S : T / X
                     // T is entry/exit/oncycle and X is the action for state S.
+                    // Check if X contains a 'raise' keyword followed by Y, then
+                    // Y shall be added to the outgoing event list.
                     // =========================================================
                     else if ((2 < numTokens) && (0 == tokens[1].compare(":")))
                     {
@@ -708,6 +705,25 @@ void Reader_t::collectStates(void)
                                 }
                                 if (hasType)
                                 {
+                                    // look for any 'raise' stuff
+                                    size_t i = 4;
+                                    while (i < (tokens.size() - 1))
+                                    {
+                                        if (0 == tokens[i].compare("raise"))
+                                        {
+                                            Event_t ev;
+                                            ev.name = tokens[i+1];
+                                            ev.direction = Outgoing;
+                                            ev.requireParameter = false;
+                                            ev.parameterType = "";
+                                            ev.isTimeEvent = false;
+                                            ev.isPeriodic = false;
+                                            ev.expireTime_ms = 0;
+                                            this->addEvent(ev);
+                                        }
+                                        i++;
+                                    }
+
                                     std::string declStr = tokens[4];
                                     for (size_t i = 5; i < tokens.size(); i++)
                                     {
@@ -762,93 +778,79 @@ State_Id_t Reader_t::addState(State_t newState)
     static State_Id_t id = 0;
     State_Id_t newId = 0;
 
-    if (0 == this->states.size())
+    // look for duplicate
+    bool isFound = false;
+    for (size_t i = 0; i < this->states.size(); i++)
     {
-        // just add the first
+        if ((0 == newState.name.compare("initial")) || (0 == newState.name.compare("final")))
+        {
+            // check if this exact one exists already
+            if ((0 == this->states[i].name.compare(newState.name)) && (newState.parent == this->states[i].parent))
+            {
+                isFound = true;
+                newId = this->states[i].id;
+                break;
+            }
+        }
+        else
+        {
+            // require unique names
+            if (0 == this->states[i].name.compare(newState.name))
+            {
+                isFound = true;
+                newId = this->states[i].id;
+                break; // for
+            }
+        }
+    }
+
+    if (!isFound)
+    {
+        // new state
         id++;
         newState.id = id;
         this->states.push_back(newState);
         newId = newState.id;
-    }
-    else
-    {
-        // look for duplicate
-        bool isFound = false;
-        for (size_t i = 0; i < this->states.size(); i++)
-        {
-            if ((0 == newState.name.compare("initial")) || (0 == newState.name.compare("final")))
-            {
-                // check if this exact one exists already
-                if ((0 == this->states[i].name.compare(newState.name)) && (newState.parent == this->states[i].parent))
-                {
-                    isFound = true;
-                    newId = this->states[i].id;
-                    break;
-                }
-            }
-            else
-            {
-                // require unique names
-                if (0 == this->states[i].name.compare(newState.name))
-                {
-                    isFound = true;
-                    newId = this->states[i].id;
-                    break; // for
-                }
-            }
-        }
 
-        if (!isFound)
+        if (this->verbose)
         {
-            // new state
-            id++;
-            newState.id = id;
-            this->states.push_back(newState);
-            newId = newState.id;
-
-            if (this->verbose)
-            {
-                std::cout << "NEW STATE: " << newState.name << ", id = " << newState.id << ", parent = " << newState.parent << std::endl;
-            }
+            std::cout << "NEW STATE: " << newState.name << ", id = " << newState.id << ", parent = " << newState.parent << std::endl;
         }
     }
+
     return (newId);
 }
 
 void Reader_t::addEvent(const Event_t newEvent)
 {
-    if (0 == this->events.size())
+    // look for duplicate
+    bool isFound = false;
+    for (size_t i = 0; i < this->events.size(); i++)
     {
-        // just add the first
+        if (0 == this->events[i].name.compare(newEvent.name))
+        {
+            isFound = true;
+            break; // for
+        }
+    }
+
+    if (!isFound)
+    {
+        // new event
         this->events.push_back(newEvent);
+
+        if (this->verbose)
+        {
+            std::string type = (newEvent.isTimeEvent) ?
+                "time" : (Incoming == newEvent.direction) ?
+                    "incoming" : "outgoing";
+
+            std::cout << "Added new (" << type << ") event " << newEvent.name << std::endl;
+        }
     }
     else
     {
-        // look for duplicate
-        bool isFound = false;
-        for (size_t i = 0; i < this->events.size(); i++)
-        {
-            if (0 == this->events[i].name.compare(newEvent.name))
-            {
-                isFound = true;
-                break; // for
-            }
-        }
-
-        if (!isFound)
-        {
-            // new event
-            this->events.push_back(newEvent);
-
-            if (this->verbose)
-            {
-                std::string type = (newEvent.isTimeEvent) ?
-                    "time" : (Incoming == newEvent.direction) ?
-                        "incoming" : "outgoing";
-
-                std::cout << "Added new (" << type << ") event " << newEvent.name << std::endl;
-            }
-        }
+        std::cout << "Duplicate entry found for " << newEvent.name << std::endl;
     }
 }
 

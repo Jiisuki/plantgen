@@ -104,6 +104,27 @@ void writePrototype_raiseInEvent(Writer_t* writer, Reader_t* reader, const size_
         }
         writer->out_h << ");" << std::endl;
     }
+    writer->out_h << std::endl;
+}
+
+void writePrototype_raiseOutEvent(Writer_t* writer, Reader_t* reader)
+{
+    const size_t nEvents = reader->getOutEventCount();
+    if (0 < nEvents)
+    {
+        const std::string modelName = reader->getModelName();
+        for (size_t i = 0; i < nEvents; i++)
+        {
+            Event_t* ev = reader->getOutEvent(i);
+            writer->out_c << getIndent(0) << "static void raise_" << ev->name << "(" << getHandleName(modelName) << " handle";
+            if (ev->requireParameter)
+            {
+                writer->out_c << ", const " << ev->parameterType << " param";
+            }
+            writer->out_c << ");" << std::endl;
+        }
+        writer->out_c << std::endl;
+    }
 }
 
 void writePrototype_timeTick(Writer_t* writer, Reader_t* reader)
@@ -118,6 +139,21 @@ void writePrototype_timeTick(Writer_t* writer, Reader_t* reader)
                       << getHandleName(reader->getModelName())
                       << " handle, const size_t timeElapsed_ms);"
                       << std::endl << std::endl;
+    }
+}
+
+void writePrototype_checkOutEvent(Writer_t* writer, Reader_t* reader)
+{
+    const std::string modelName = reader->getModelName();
+    const size_t nOutEvents = reader->getOutEventCount();
+    for (size_t i = 0; i < nOutEvents; i++)
+    {
+        Event_t* ev = reader->getOutEvent(i);
+        writer->out_h << "bool " << modelName << "_is_" << ev->name << "_raised(const " << getHandleName(modelName) << " handle);" << std::endl;
+    }
+    if (0 < nOutEvents)
+    {
+        writer->out_h << std::endl;
     }
 }
 
@@ -141,6 +177,18 @@ void writePrototype_clearEvents(Writer_t* writer, Reader_t* reader)
     {
         writer->out_c << "static void clearOutEvents(" << getHandleName(modelName) << " handle);" << std::endl;
     }
+}
+
+void writePrototype_getVariable(Writer_t* writer, Reader_t* reader)
+{
+    const std::string modelName = reader->getModelName();
+    const size_t nVariables = reader->getPublicVariableCount();
+    for (size_t i = 0; i < nVariables; i++)
+    {
+        Variable_t* var = reader->getPublicVariable(i);
+        writer->out_h << var->type << " " << modelName << "_get_" << var->name << "(const " << getHandleName(modelName) << " handle);" << std::endl;
+    }
+    writer->out_h << std::endl;
 }
 
 void writePrototype_traceEntry(Writer_t* writer, const std::string modelName)
@@ -175,9 +223,10 @@ void writeDeclaration_stateList(Writer_t* writer, Reader_t* reader, const size_t
 void writeDeclaration_eventList(Writer_t* writer, Reader_t* reader)
 {
     const size_t nInEvents = reader->getInEventCount();
+    const size_t nOutEvents = reader->getOutEventCount();
     const size_t nTimeEvents = reader->getTimeEventCount();
 
-    if ((0 == nInEvents) && (0 == nTimeEvents))
+    if ((0 == nInEvents) && (0 == nTimeEvents) && (0 == nOutEvents))
     {
         // don't write any
     }
@@ -205,6 +254,27 @@ void writeDeclaration_eventList(Writer_t* writer, Reader_t* reader)
                 }
             }
             writer->out_h << getIndent(1) << "} inEvents;" << std::endl;
+        }
+        if (0 < nOutEvents)
+        {
+            writer->out_h << getIndent(1) << "struct" << std::endl;
+            writer->out_h << getIndent(1) << "{" << std::endl;
+            for (size_t i = 0; i < nOutEvents; i++)
+            {
+                Event_t* ev = reader->getOutEvent(i);
+                if (NULL != ev)
+                {
+                    writer->out_h << getIndent(2) << "struct" << std::endl;
+                    writer->out_h << getIndent(2) << "{" << std::endl;
+                    writer->out_h << getIndent(3) << "bool isRaised;" << std::endl;
+                    if (ev->requireParameter)
+                    {
+                        writer->out_h << getIndent(3) << ev->parameterType << " param;" << std::endl;
+                    }
+                    writer->out_h << getIndent(2) << "} " << ev->name << ";" << std::endl;
+                }
+            }
+            writer->out_h << getIndent(1) << "} outEvents;" << std::endl;
         }
         // check for time events
         if (0 < nTimeEvents)
@@ -382,6 +452,60 @@ void writeImplementation_raiseInEvent(Writer_t* writer, Reader_t* reader, const 
     }
 }
 
+void writeImplementation_raiseOutEvent(Writer_t* writer, Reader_t* reader)
+{
+    const size_t nEvents = reader->getOutEventCount();
+    if (0 < nEvents)
+    {
+        const std::string modelName = reader->getModelName();
+        for (size_t i = 0; i < nEvents; i++)
+        {
+            Event_t* ev = reader->getOutEvent(i);
+            writer->out_c << getIndent(0) << "static void raise_" << ev->name << "(" << getHandleName(modelName) << " handle";
+            if (ev->requireParameter)
+            {
+                writer->out_c << ", const " << ev->parameterType << " param";
+            }
+            writer->out_c << ")" << std::endl;
+            writer->out_c << getIndent(0) << "{" << std::endl;
+            if (ev->requireParameter)
+            {
+                writer->out_c << getIndent(1) << "handle->events.outEvents." << ev->name << ".param = param;" << std::endl;
+            }
+            writer->out_c << getIndent(1) << "handle->events.outEvents." << ev->name << ".isRaised = true;" << std::endl;
+            writer->out_c << getIndent(0) << "}" << std::endl << std::endl;
+        }
+    }
+}
+
+void writeImplementation_checkOutEvent(Writer_t* writer, Reader_t* reader)
+{
+    const std::string modelName = reader->getModelName();
+    const size_t nOutEvents = reader->getOutEventCount();
+    for (size_t i = 0; i < nOutEvents; i++)
+    {
+        Event_t* ev = reader->getOutEvent(i);
+        writer->out_c << "bool " << modelName << "_is_" << ev->name << "_raised(const " << getHandleName(modelName) << " handle)" << std::endl;
+        writer->out_c << "{" << std::endl;
+        writer->out_c << getIndent(1) << "return (handle->events.outEvents." << ev->name << ".isRaised);" << std::endl;
+        writer->out_c << "}" << std::endl << std::endl;
+    }
+}
+
+void writeImplementation_getVariable(Writer_t* writer, Reader_t* reader)
+{
+    const std::string modelName = reader->getModelName();
+    const size_t nVariables = reader->getPublicVariableCount();
+    for (size_t i = 0; i < nVariables; i++)
+    {
+        Variable_t* var = reader->getPublicVariable(i);
+        writer->out_c << var->type << " " << modelName << "_get_" << var->name << "(const " << getHandleName(modelName) << " handle)" << std::endl;
+        writer->out_c << "{" << std::endl;
+        writer->out_c << getIndent(1) << "return (handle->variables.public." << var->name << ");" << std::endl;
+        writer->out_c << "}" << std::endl << std::endl;
+    }
+}
+
 void writeImplementation_timeTick(Writer_t* writer, Reader_t* reader)
 {
     const size_t nTimeEvents = reader->getTimeEventCount();
@@ -477,6 +601,11 @@ void writeImplementation_topRunCycle(Writer_t* writer, Reader_t* reader, const s
     size_t writeNumber = 0;
     writer->out_c << "static void runCycle(" << getHandleName(modelName) << " handle)" << std::endl;
     writer->out_c << "{" << std::endl;
+    const size_t nOutEvents = reader->getOutEventCount();
+    if (0 < nOutEvents)
+    {
+        writer->out_c << getIndent(1) << "clearOutEvents(handle);" << std::endl << std::endl;
+    }
     for (size_t i = 0; i < nStates; i++)
     {
         State_t* state = reader->getState(i);
@@ -506,20 +635,14 @@ void writeImplementation_topRunCycle(Writer_t* writer, Reader_t* reader, const s
     }
 
     const size_t nInEvents = reader->getInEventCount();
-    const size_t nTimeEvents = reader->getTimeEventCount();
-    const size_t nOutEvents = reader->getOutEventCount();
-
     if (0 < nInEvents)
     {
         writer->out_c << getIndent(1) << "clearInEvents(handle);" << std::endl;
     }
+    const size_t nTimeEvents = reader->getTimeEventCount();
     if (0 < nTimeEvents)
     {
         writer->out_c << getIndent(1) << "clearTimeEvents(handle);" << std::endl;
-    }
-    if (0 < nOutEvents)
-    {
-        writer->out_c << getIndent(1) << "clearOutEvents(handle);" << std::endl;
     }
     writer->out_c << "}" << std::endl << std::endl;
 }
@@ -1027,12 +1150,72 @@ static void parseDeclaration(Writer_t* writer, Reader_t* reader, const std::stri
         }
     }
 
-    if (';' != wstr.back())
+    // search for "raise X"
+    std::string outstr = "";
+    isParsed = false;
+    start = 0;
+    while (!isParsed)
     {
-        wstr += ";";
+        const size_t raiseKeywordPosition = wstr.find("raise", start);
+        if (std::string::npos == raiseKeywordPosition)
+        {
+            // finished without finding 'raise'
+            outstr += wstr.substr(start);
+            isParsed = true;
+        }
+        else
+        {
+            // find next space
+            const size_t firstSpacePosition = wstr.find_first_of(" ", raiseKeywordPosition);
+            if (std::string::npos == firstSpacePosition)
+            {
+                // no space detected after the keyword
+                outstr += wstr.substr(start);
+                isParsed = true;
+            }
+            else
+            {
+                const size_t nextSpacePosition = wstr.find_first_of(" ", firstSpacePosition + 1);
+                if (std::string::npos == nextSpacePosition)
+                {
+                    // no more space found, check length
+                    if ((nextSpacePosition + 1) < wstr.length())
+                    {
+                        // take the last part as the outgoing event
+                        std::string evName = wstr.substr(firstSpacePosition+1);
+                        if (';' == evName.back())
+                        {
+                            evName.pop_back();
+                        }
+                        outstr += "raise_" + evName + "(handle);";
+                    }
+                    else
+                    {
+                        outstr += wstr.substr(start);
+                    }
+                    isParsed = true;
+                }
+                else
+                {
+                    // take the word between the spaces as the event
+                    std::string evName = wstr.substr(firstSpacePosition + 1, (nextSpacePosition - firstSpacePosition) - 1);
+                    if (';' == evName.back())
+                    {
+                        evName.pop_back();
+                    }
+                    outstr += "raise_" + evName + "(handle); ";
+                    start = nextSpacePosition;
+                }
+            }
+        }
     }
 
-    writer->out_c << getIndent(1) << wstr << std::endl;
+    if (';' != outstr.back())
+    {
+        outstr += ";";
+    }
+
+    writer->out_c << getIndent(1) << outstr << std::endl;
 }
 
 static std::string parseGuard(Writer_t* writer, Reader_t* reader, const std::string guardStrRaw)

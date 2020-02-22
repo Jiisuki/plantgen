@@ -16,8 +16,11 @@ void writePrototype_react(Writer_t* writer, Reader_t* reader, const size_t nStat
 void writePrototype_entryAction(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
 void writePrototype_exitAction(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
 void writePrototype_raiseInEvent(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
+void writePrototype_raiseOutEvent(Writer_t* writer, Reader_t* reader);
 void writePrototype_timeTick(Writer_t* writer, Reader_t* reader);
+void writePrototype_checkOutEvent(Writer_t* writer, Reader_t* reader);
 void writePrototype_clearEvents(Writer_t* writer, Reader_t* reader);
+void writePrototype_getVariable(Writer_t* writer, Reader_t* reader);
 
 void writePrototype_traceEntry(Writer_t* writer, const std::string modelName);
 void writePrototype_traceExit(Writer_t* writer, const std::string modelName);
@@ -29,6 +32,9 @@ void writeDeclaration_stateMachine(Writer_t* writer, Reader_t* reader, const std
 
 void writeImplementation_init(Writer_t* writer, Reader_t* reader, const std::vector<State_t*> firstState, const std::string modelName);
 void writeImplementation_raiseInEvent(Writer_t* writer, Reader_t* reader, const size_t nEvents, const std::string modelName);
+void writeImplementation_raiseOutEvent(Writer_t* writer, Reader_t* reader);
+void writeImplementation_checkOutEvent(Writer_t* writer, Reader_t* reader);
+void writeImplementation_getVariable(Writer_t* writer, Reader_t* reader);
 void writeImplementation_timeTick(Writer_t* writer, Reader_t* reader);
 void writeImplementation_clearEvents(Writer_t* writer, Reader_t* reader);
 void writeImplementation_topRunCycle(Writer_t* writer, Reader_t* reader, const size_t nStates, const std::string modelName);
