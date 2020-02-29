@@ -1,0 +1,25 @@
+@startuml
+scale 0.75
+
+header
+model BusSm
+import local example.h
+public var bus : uint8_t
+public var isAvailable : bool = false
+endheader
+
+[*] -> idle
+idle -down-> notIdle : get
+idle : entry / ${bus} = 0; ${isAvailable} = false
+
+state notIdle {
+    state allocate <<choice>>
+    [*] -> allocate
+    allocate -> available : [0 != (${bus} = getFreeBus())] 
+    available : entry / ${isAvailable} = true
+    allocate -> allBusy
+    allBusy : entry / ${isAvailable} = false 
+}
+notIdle -> idle : back
+
+@enduml

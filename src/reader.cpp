@@ -190,7 +190,7 @@ size_t Reader_t::getInEventCount(void)
     size_t nEvents = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
-        if (!this->events[i].isTimeEvent && (Incoming == this->events[i].direction))
+        if (!this->events[i].isTimeEvent && (Event_Direction_Incoming == this->events[i].direction))
         {
             nEvents++;
         }
@@ -204,7 +204,39 @@ Event_t* Reader_t::getInEvent(size_t id)
     size_t n = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
-        if (!this->events[i].isTimeEvent && (Incoming == this->events[i].direction))
+        if (!this->events[i].isTimeEvent && (Event_Direction_Incoming == this->events[i].direction))
+        {
+            if (id == n)
+            {
+                return (&this->events[i]);
+            }
+            n++;
+        }
+    }
+    return (NULL);
+}
+
+// public
+size_t Reader_t::getInternalEventCount(void)
+{
+    size_t nEvents = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (!this->events[i].isTimeEvent && (Event_Direction_Internal == this->events[i].direction))
+        {
+            nEvents++;
+        }
+    }
+    return (nEvents);
+}
+
+// public
+Event_t* Reader_t::getInternalEvent(size_t id)
+{
+    size_t n = 0;
+    for (size_t i = 0; i < this->events.size(); i++)
+    {
+        if (!this->events[i].isTimeEvent && (Event_Direction_Internal == this->events[i].direction))
         {
             if (id == n)
             {
@@ -252,7 +284,7 @@ size_t Reader_t::getOutEventCount(void)
     size_t nEvents = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
-        if (!this->events[i].isTimeEvent && (Outgoing == this->events[i].direction))
+        if (!this->events[i].isTimeEvent && (Event_Direction_Outgoing == this->events[i].direction))
         {
             nEvents++;
         }
@@ -266,7 +298,7 @@ Event_t* Reader_t::getOutEvent(size_t id)
     size_t n = 0;
     for (size_t i = 0; i < this->events.size(); i++)
     {
-        if (!this->events[i].isTimeEvent && (Outgoing == this->events[i].direction))
+        if (!this->events[i].isTimeEvent && (Event_Direction_Outgoing == this->events[i].direction))
         {
             if (id == n)
             {
@@ -483,13 +515,36 @@ void Reader_t::collectStates(void)
 
                         if (0 == tokens[0].compare("in"))
                         {
-                            newEvent.direction = Incoming;
+                            newEvent.direction = Event_Direction_Incoming;
                         }
                         else
                         {
-                            newEvent.direction = Outgoing;
+                            newEvent.direction = Event_Direction_Outgoing;
                         }
 
+                        this->addEvent(newEvent);
+                    }
+                    else if ((0 == tokens[0].compare("event")) && (2 <= tokens.size()))
+                    {
+                        Event_t newEvent;
+                        newEvent.name = tokens[1];
+                        // time config
+                        newEvent.isTimeEvent = false;
+                        newEvent.expireTime_ms = 0;
+                        newEvent.isPeriodic = false;
+
+                        if (4 == tokens.size())
+                        {
+                            newEvent.requireParameter = true;
+                            newEvent.parameterType = tokens[3];
+                        }
+                        else
+                        {
+                            newEvent.requireParameter = false;
+                            newEvent.parameterType = "";
+                        }
+
+                        newEvent.direction = Event_Direction_Internal;
                         this->addEvent(newEvent);
                     }
                 }
@@ -559,7 +614,7 @@ void Reader_t::collectStates(void)
 
                         Event_t ev;
                         ev.name = "null";
-                        ev.direction = Incoming; // assume default
+                        ev.direction = Event_Direction_Incoming; // assume default
                         ev.parameterType = "";
                         ev.requireParameter = false;
                         ev.isTimeEvent = false;
@@ -650,13 +705,13 @@ void Reader_t::collectStates(void)
                                         tr.guard = guardStr.substr(1, guardStr.length()-2);
                                     }
                                 }
-                                // add the event
-                                this->addEvent(ev);
                             }
                         }
 
+                        // add the event
+                        tr.event = this->addEvent(ev);
+
                         // add event to transition and add transition.
-                        tr.event = ev;
                         this->addTransition(tr);
                     }
 
@@ -713,7 +768,7 @@ void Reader_t::collectStates(void)
                                         {
                                             Event_t ev;
                                             ev.name = tokens[i+1];
-                                            ev.direction = Outgoing;
+                                            ev.direction = Event_Direction_Internal; // assume default
                                             ev.requireParameter = false;
                                             ev.parameterType = "";
                                             ev.isTimeEvent = false;
@@ -821,15 +876,18 @@ State_Id_t Reader_t::addState(State_t newState)
     return (newId);
 }
 
-void Reader_t::addEvent(const Event_t newEvent)
+Event_t Reader_t::addEvent(const Event_t newEvent)
 {
     // look for duplicate
+    Event_t ev = newEvent;
+
     bool isFound = false;
     for (size_t i = 0; i < this->events.size(); i++)
     {
         if (0 == this->events[i].name.compare(newEvent.name))
         {
             isFound = true;
+            ev = this->events[i];
             break; // for
         }
     }
@@ -842,8 +900,9 @@ void Reader_t::addEvent(const Event_t newEvent)
         if (this->verbose)
         {
             std::string type = (newEvent.isTimeEvent) ?
-                "time" : (Incoming == newEvent.direction) ?
-                    "incoming" : "outgoing";
+                "time" : (Event_Direction_Incoming == newEvent.direction) ?
+                    "incoming" : (Event_Direction_Internal == newEvent.direction) ?
+                            "internal" : "outgoing";
 
             std::cout << "Added new (" << type << ") event " << newEvent.name << std::endl;
         }
@@ -852,6 +911,8 @@ void Reader_t::addEvent(const Event_t newEvent)
     {
         std::cout << "Duplicate entry found for " << newEvent.name << std::endl;
     }
+
+    return (ev);
 }
 
 void Reader_t::addTransition(const Transition_t newTransition)

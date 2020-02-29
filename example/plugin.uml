@@ -1,0 +1,26 @@
+@startuml
+scale 0.75
+
+header
+model Plugin
+import local example.h
+private var canGetData : bool
+endheader
+
+[*] -> Wait
+Wait -down-> Run : Start
+state Run {
+    [*] -> CheckData
+    CheckData : entry / raise Checked
+    CheckData -> AddData : Checked
+    state AddData {
+        [*] -> Ask
+        Ask : entry / raise More
+    }
+    AddData -down-> Write : More
+    AddData : entry / ${canGetData} = true
+    AddData : exit / ${canGetData} = false
+    Write -> CheckData : after 1 s
+}
+
+@enduml

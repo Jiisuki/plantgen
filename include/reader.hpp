@@ -33,8 +33,9 @@ typedef struct
 
 typedef enum
 {
-    Incoming,
-    Outgoing,
+    Event_Direction_Incoming,
+    Event_Direction_Outgoing,
+    Event_Direction_Internal,
 } Event_Direction_t;
 
 typedef struct
@@ -89,7 +90,7 @@ class Reader_t
         void collectEvents(void);
         std::vector<std::string> tokenize(std::string str);
         State_Id_t addState(State_t newState);
-        void addEvent(const Event_t newEvent);
+        Event_t addEvent(const Event_t newEvent);
         void addTransition(const Transition_t newTransition);
         void addDeclaration(const State_Declaration_t newDecl);
         void addVariable(const Variable_t newVar);
@@ -123,6 +124,9 @@ class Reader_t
 
         size_t getInEventCount(void);
         Event_t* getInEvent(const size_t id);
+
+        size_t getInternalEventCount(void);
+        Event_t* getInternalEvent(const size_t id);
 
         size_t getTimeEventCount(void);
         Event_t* getTimeEvent(const size_t id);
