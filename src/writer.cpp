@@ -1046,14 +1046,6 @@ void Writer_t::impl_runCycle(void)
                             this->out_c << getIndent(indentLevel) << "{" << std::endl;
                             indentLevel++;
 
-                            // if tracing is enabled
-#if 0
-                            if (writerConfig.doTracing)
-                            {
-                                writer->out_c << getIndent(indentLevel) << getTraceCall_exit(reader) << std::endl;
-                            }
-#endif
-
                             const bool didChildExits = this->parseChildExits(state, indentLevel, state->id, false);
 
                             if (didChildExits)
@@ -1065,7 +1057,16 @@ void Writer_t::impl_runCycle(void)
                                 if (this->hasExitStatement(state->id))
                                 {
                                     this->out_c << getIndent(indentLevel) << "/* Handle super-step exit. */" << std::endl;
-                                    this->out_c << getIndent(indentLevel) << this->styler->getStateExit(state) << "(handle);" << std::endl << std::endl;
+                                    this->out_c << getIndent(indentLevel) << this->styler->getStateExit(state) << "(handle);" << std::endl;
+                                }
+                                if (this->config.doTracing)
+                                {
+                                    this->out_c << getIndent(indentLevel) << this->getTraceCall_exit(state) << std::endl;
+                                }
+                                /* Extra new-line */
+                                if ((this->hasExitStatement(state->id)) || (this->config.doTracing))
+                                {
+                                    this->out_c << std::endl;
                                 }
                             }
 
@@ -1083,18 +1084,14 @@ void Writer_t::impl_runCycle(void)
                             {
                                 finalState = enteredStates[j];
 
-                                // if tracing is enabled, TODO fix function
-                                // call so send state name.
-#if 0
-                                if (writerConfig.doTracing)
-                                {
-                                    writer->out_c << getIndent(indentLevel) << getTraceCall_entry(reader) << std::endl;
-                                }
-#endif
-
                                 if (this->hasEntryStatement(finalState->id))
                                 {
                                     this->out_c << getIndent(indentLevel) << this->styler->getStateEntry(finalState) << "(handle);" << std::endl;
+                                }
+
+                                if (this->config.doTracing)
+                                {
+                                    this->out_c << getIndent(indentLevel) << this->getTraceCall_entry(finalState) << std::endl;
                                 }
                             }
 
@@ -1681,6 +1678,11 @@ bool Writer_t::parseChildExits(State_t* currentState, size_t indentLevel, const 
                 this->out_c << getIndent(indentLevel) << this->styler->getStateExit(currentState) << "(handle);" << std::endl;
             }
 
+            if (this->config.doTracing)
+            {
+                this->out_c << getIndent(indentLevel) << this->getTraceCall_exit(currentState) << std::endl;
+            }
+
             // go up to the top
             while (topState != currentState->id)
             {
@@ -1688,6 +1690,10 @@ bool Writer_t::parseChildExits(State_t* currentState, size_t indentLevel, const 
                 if (this->hasExitStatement(currentState->id))
                 {
                     this->out_c << getIndent(indentLevel) << this->styler->getStateExit(currentState) << "(handle);" << std::endl;
+                }
+                if (this->config.doTracing)
+                {
+                    this->out_c << getIndent(indentLevel) << this->getTraceCall_exit(currentState) << std::endl;
                 }
             }
             indentLevel--;
@@ -1746,14 +1752,14 @@ bool Writer_t::hasExitStatement(const State_Id_t stateId)
 }
 
 
-std::string Writer_t::getTraceCall_entry(void)
+std::string Writer_t::getTraceCall_entry(const State_t* state)
 {
-    return (this->styler->getTraceEntry() + "(handle->state);");
+    return (this->styler->getTraceEntry() + "(" + this->styler->getStateName(state) + ");");
 }
 
-std::string Writer_t::getTraceCall_exit(void)
+std::string Writer_t::getTraceCall_exit(const State_t* state)
 {
-    return (this->styler->getTraceExit() + "(handle->state);");
+    return (this->styler->getTraceExit() + "(" + this->styler->getStateName(state) + ");");
 }
 
 std::vector<State_t*> Writer_t::findEntryState(State_t* in)

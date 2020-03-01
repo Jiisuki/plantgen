@@ -56,8 +56,8 @@ private:
     bool parseChildExits(State_t* currentState, size_t indentLevel, const State_Id_t topState, const bool didPreviousWrite);
     bool hasEntryStatement(const State_Id_t stateId);
     bool hasExitStatement(const State_Id_t stateId);
-    std::string getTraceCall_entry(void);
-    std::string getTraceCall_exit(void);
+    std::string getTraceCall_entry(const State_t* state);
+    std::string getTraceCall_exit(const State_t* state);
     std::vector<State_t*> findInitState(void);
     std::vector<State_t*> findEntryState(State_t* in);
     std::vector<State_t*> findFinalState(State_t* in);
