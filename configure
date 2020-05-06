@@ -23,13 +23,11 @@ my @c_symbols = (
 # Specify include folders for C language.
 my @c_include = (
     "include",
-    "src-gen",
 );
 
 # Specify source directories.
 my @src_dirs = (
     "src",
-    "src-gen",
 );
 
 # ==============================================================================

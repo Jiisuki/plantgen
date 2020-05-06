@@ -48,7 +48,11 @@ std::string Style_t::getStateBaseDecl(const State_t* state)
         }
     }
 
-    decl_base += state->name;
+    /* Add first letter upper-case. */
+    decl_base += std::toupper(state->name[0]);
+    /* Add rest as is. */
+    decl_base += state->name.substr(1);
+    //decl_base += state->name;
 
     return (decl_base);
 }

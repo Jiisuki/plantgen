@@ -541,7 +541,7 @@ void Writer_t::decl_variableList(void)
                     this->out_h << getIndent(2) << var->type << " " << var->name << ";" << std::endl;
                 }
             }
-            this->out_h << getIndent(1) << "} public;" << std::endl;
+            this->out_h << getIndent(1) << "} exported;" << std::endl;
         }
 
         this->out_h << getIndent(0) << "} " << reader->getModelName() << "_Variables_t;" << std::endl << std::endl;
@@ -1091,7 +1091,11 @@ void Writer_t::impl_runCycle(void)
 
                                 if (this->config.doTracing)
                                 {
-                                    this->out_c << getIndent(indentLevel) << this->getTraceCall_entry(finalState) << std::endl;
+                                    // Don't trace entering the choice states, since the state does not exist.
+                                    if (true != finalState->isChoice)
+                                    {
+                                        this->out_c << getIndent(indentLevel) << this->getTraceCall_entry(finalState) << std::endl;
+                                    }
                                 }
                             }
 
@@ -1459,11 +1463,11 @@ std::string Writer_t::parseGuard(const std::string guardStrRaw)
                         wstr += "handle->variables.";
                         if (var->isPrivate)
                         {
-                            wstr += "private.";
+                            wstr += "internal.";
                         }
                         else
                         {
-                            wstr += "public.";
+                            wstr += "exported.";
                         }
                         wstr += var->name;
                         isReplaced = true;
