@@ -4,5 +4,6 @@ Default/
 bin/
 src-gen/
 testbin/
-/build/
-/Debug/
+build/
+Debug/
+documentation/
