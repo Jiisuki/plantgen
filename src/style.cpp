@@ -1,8 +1,5 @@
-/*
- * style.cpp
- *
- *  Created on: 29 feb. 2020
- *      Author: Jiisuki
+/** @file
+ *  @brief Implementation of the styling class.
  */
 
 #include "style.hpp"

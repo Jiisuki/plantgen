@@ -1,8 +1,5 @@
-/*
- * style.h
- *
- *  Created on: 29 feb. 2020
- *      Author: Jiisuki
+/** @file
+ *  @brief Handles styling of the generated code.
  */
 
 #pragma once

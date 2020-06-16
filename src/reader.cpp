@@ -1,3 +1,7 @@
+/** @file
+ *  @brief Implementation of the reader class.
+ */
+
 #include <vector>
 #include <string>
 #include <stdint.h>

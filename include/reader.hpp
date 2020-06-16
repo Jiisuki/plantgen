@@ -1,3 +1,7 @@
+/** @file
+ *  @brief Class for reading a plantuml file.
+ */
+
 #pragma once
 
 #include <vector>

@@ -1,3 +1,7 @@
+/** @file
+ *  @brief Handles writing of the generated code.
+ */
+
 #pragma once
 
 #include <fstream>

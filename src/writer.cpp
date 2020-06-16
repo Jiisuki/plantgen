@@ -1,3 +1,7 @@
+/** @file
+ *  @brief Implementation of the writer class.
+ */
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
