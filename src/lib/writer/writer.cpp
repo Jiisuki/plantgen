@@ -76,6 +76,15 @@ void Writer::generate(const std::string &filename, const std::string &outdir)
         out_h << std::endl;
     }
 
+    if (!styler->get_config_use_builtin_time_event_handling())
+    {
+        out_h << "/* The state machine uses external time event handling, therefore the" << std::endl;
+        out_h << " * following functions are required to be implemented by the user. */" << std::endl;
+        proto_startTimer();
+        proto_stopTimer();
+        out_h << std::endl;
+    }
+
     // write init function
     out_h << "/** @brief Initialises the state machine. */" << std::endl;
     out_h << "void " << collection->get_model_name() << "_init(" << styler->get_handle_type() << " handle);" << std::endl << std::endl;
@@ -155,7 +164,7 @@ void Writer::proto_runCycle()
         }
         else
         {
-            out_c << getIndent(0) << "static bool " << styler->get_state_run_cycle(s) << "(" << styler->get_handle_type() << " handle, const bool tryTransition);" << std::endl;
+            out_c << getIndent(0) << "static bool " << styler->get_state_run_cycle(s) << "(" << styler->get_handle_type() << " handle, const bool try_transition);" << std::endl;
         }
     }
     out_c << std::endl;
@@ -267,12 +276,35 @@ void Writer::proto_raiseInternalEvent()
 void Writer::proto_timeTick()
 {
     bool did_write = false;
-    for (auto e : collection->events)
+    if (styler->get_config_use_builtin_time_event_handling())
     {
-        if (e.is_time_event)
+        for (auto e : collection->events)
+        {
+            if (e.is_time_event)
+            {
+                did_write = true;
+                    out_h << getIndent(0)
+                          << "void "
+                          << styler->get_time_tick()
+                          << "("
+                          << styler->get_handle_type()
+                          << " handle, const size_t timeElapsed_ms);"
+                          << std::endl;
+            }
+        }
+    }
+    else
+    {
+        if (!collection->events.empty())
         {
             did_write = true;
-            out_h << getIndent(0) << "void " << styler->get_time_tick() << "(" << styler->get_handle_type() << " handle, const size_t timeElapsed_ms);" << std::endl;
+            out_h << getIndent(0)
+                  << "void "
+                  << styler->get_time_event_raise()
+                  << "("
+                  << styler->get_handle_type()
+                  << " handle, const void* event);"
+                  << std::endl;
         }
     }
 
@@ -372,6 +404,16 @@ void Writer::proto_traceEntry(void)
 void Writer::proto_traceExit(void)
 {
     out_h << "extern void " << styler->get_trace_exit() << "(const " << styler->get_state_type() << " state);" << std::endl;
+}
+
+void Writer::proto_startTimer()
+{
+    out_h << "extern void " << styler->get_start_timer() << "(" << styler->get_handle_type() << " handle, const void* event, const size_t time_ms, const bool is_periodic);" << std::endl;
+}
+
+void Writer::proto_stopTimer()
+{
+    out_h << "extern void " << styler->get_stop_timer() << "(" << styler->get_handle_type() << " handle, const void* event);" << std::endl;
 }
 
 void Writer::decl_stateList(void)
@@ -641,12 +683,10 @@ void Writer::impl_init(const std::vector<State> first_state_path)
         }
         out_c << getIndent(1) << "handle->state = " << styler->get_state_name(first_state_path.back()) << ";" << std::endl;
 
-#if 0
-        if (writerConfig.doTracing)
+        if (enable_tracing)
         {
-            writer->out_c << getIndent(1) << getTraceCall_entry(reader) << std::endl;
+            out_c << getIndent(1) << get_trace_call_entry(first_state_path.back()) << std::endl;
         }
-#endif
     }
     out_c << "}" << std::endl << std::endl;
 }
@@ -762,35 +802,63 @@ void Writer::impl_timeTick(void)
 
     if (has_time_events)
     {
-        out_c << getIndent(0) << "void " << styler->get_time_tick() << "(" << styler->get_handle_type() << " handle, const size_t timeElapsed_ms)" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << "handle->timeNow_ms += timeElapsed_ms;" << std::endl << std::endl;
-
-        for (auto e : collection->events)
+        if (styler->get_config_use_builtin_time_event_handling())
         {
-            if (e.is_time_event)
+            out_c << getIndent(0) << "void " << styler->get_time_tick() << "(" << styler->get_handle_type()
+                  << " handle, const size_t timeElapsed_ms)" << std::endl;
+            out_c << getIndent(0) << "{" << std::endl;
+            out_c << getIndent(1) << "handle->timeNow_ms += timeElapsed_ms;" << std::endl << std::endl;
+
+            for (auto e : collection->events)
             {
-                out_c << getIndent(1) << "if (handle->events.timeEvents." << e.name << ".isStarted)" << std::endl;
-                out_c << getIndent(1) << "{" << std::endl;
-                out_c << getIndent(2) << "if (handle->events.timeEvents." << e.name << ".expireTime_ms <= handle->timeNow_ms)" << std::endl;
-                out_c << getIndent(2) << "{" << std::endl;
-                out_c << getIndent(3) << "handle->events.timeEvents." << e.name << ".isRaised = true;" << std::endl;
-                out_c << getIndent(3) << "if (handle->events.timeEvents." << e.name << ".isPeriodic)" << std::endl;
-                out_c << getIndent(3) << "{" << std::endl;
-                out_c << getIndent(4) << "handle->events.timeEvents." << e.name << ".expireTime_ms += handle->events.timeEvents." << e.name << ".timeout_ms;" << std::endl;
-                out_c << getIndent(4) << "handle->events.timeEvents." << e.name << ".isStarted = true;" << std::endl;
-                out_c << getIndent(3) << "}" << std::endl;
-                out_c << getIndent(3) << "else" << std::endl;
-                out_c << getIndent(3) << "{" << std::endl;
-                out_c << getIndent(4) << "handle->events.timeEvents." << e.name << ".isStarted = false;" << std::endl;
-                out_c << getIndent(3) << "}" << std::endl;
-                out_c << getIndent(2) << "}" << std::endl;
-                out_c << getIndent(1) << "}" << std::endl;
+                if (e.is_time_event)
+                {
+                    out_c << getIndent(1) << "if (handle->events.timeEvents." << e.name << ".isStarted)" << std::endl;
+                    out_c << getIndent(1) << "{" << std::endl;
+                    out_c << getIndent(2) << "if (handle->events.timeEvents." << e.name
+                          << ".expireTime_ms <= handle->timeNow_ms)" << std::endl;
+                    out_c << getIndent(2) << "{" << std::endl;
+                    out_c << getIndent(3) << "handle->events.timeEvents." << e.name << ".isRaised = true;" << std::endl;
+                    out_c << getIndent(3) << "if (handle->events.timeEvents." << e.name << ".isPeriodic)" << std::endl;
+                    out_c << getIndent(3) << "{" << std::endl;
+                    out_c << getIndent(4) << "handle->events.timeEvents." << e.name
+                          << ".expireTime_ms += handle->events.timeEvents." << e.name << ".timeout_ms;" << std::endl;
+                    out_c << getIndent(4) << "handle->events.timeEvents." << e.name << ".isStarted = true;"
+                          << std::endl;
+                    out_c << getIndent(3) << "}" << std::endl;
+                    out_c << getIndent(3) << "else" << std::endl;
+                    out_c << getIndent(3) << "{" << std::endl;
+                    out_c << getIndent(4) << "handle->events.timeEvents." << e.name << ".isStarted = false;"
+                          << std::endl;
+                    out_c << getIndent(3) << "}" << std::endl;
+                    out_c << getIndent(2) << "}" << std::endl;
+                    out_c << getIndent(1) << "}" << std::endl;
+                }
             }
+            out_c << std::endl;
+            out_c << getIndent(1) << styler->get_top_run_cycle() << "(handle);" << std::endl;
+            out_c << getIndent(0) << "}" << std::endl << std::endl;
         }
-        out_c << std::endl;
-        out_c << getIndent(1) << styler->get_top_run_cycle() << "(handle);" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
+        else
+        {
+            out_c << getIndent(0) << "void " << styler->get_time_event_raise() << "(" << styler->get_handle_type() << " handle, const void* event)" << std::endl;
+            out_c << getIndent(0) << "{" << std::endl;
+            unsigned int i = 0;
+            for (auto e : collection->events)
+            {
+                if (e.is_time_event)
+                {
+                    out_c << getIndent(1) << get_if_else_if(i++) << " (event == &handle->events.timeEvents." << e.name << ")" << std::endl;
+                    out_c << getIndent(1) << "{" << std::endl;
+                    out_c << getIndent(2) << "/* Raise event and perform run-cycle. */" << std::endl;
+                    out_c << getIndent(2) << "handle->events.timeEvents." << e.name << ".isRaised = true;" << std::endl;
+                    out_c << getIndent(1) << "}" << std::endl;
+                }
+            }
+            out_c << std::endl;
+            out_c << getIndent(1) << styler->get_top_run_cycle() << "(handle);" << std::endl;
+            out_c << getIndent(0) << "}" << std::endl << std::endl;
+        }
     }
 }
 
@@ -986,7 +1054,7 @@ void Writer::impl_runCycle(void)
             unsigned int indent = 0;
             bool is_body_empty = true;
 
-            out_c << "static bool " << styler->get_state_run_cycle(s) << "(" << styler->get_handle_type() << " handle, const bool tryTransition)" << std::endl;
+            out_c << "static bool " << styler->get_state_run_cycle(s) << "(" << styler->get_handle_type() << " handle, const bool try_transition)" << std::endl;
             out_c << "{" << std::endl;
             indent++;
 
@@ -1004,8 +1072,8 @@ void Writer::impl_runCycle(void)
                 out_c << std::endl;
             }
 
-            out_c << getIndent(indent) << "bool didTransition = tryTransition;" << std::endl;
-            out_c << getIndent(indent) << "if (tryTransition)" << std::endl;
+            out_c << getIndent(indent) << "bool did_transition = try_transition;" << std::endl;
+            out_c << getIndent(indent) << "if (try_transition)" << std::endl;
             out_c << getIndent(indent) << "{" << std::endl;
             indent++;
 
@@ -1015,7 +1083,7 @@ void Writer::impl_runCycle(void)
             {
                 is_body_empty = false;
                 {
-                    out_c << getIndent(indent) << "if (!" << styler->get_state_run_cycle(parent) << "(handle, tryTransition))" << std::endl;
+                    out_c << getIndent(indent) << "if (!" << styler->get_state_run_cycle(parent) << "(handle, try_transition))" << std::endl;
                     out_c << getIndent(indent) << "{" << std::endl;
                     indent++;
                 }
@@ -1024,7 +1092,7 @@ void Writer::impl_runCycle(void)
             std::vector<Transition> transitions = collection->get_transitions_from_state(s);
             if (transitions.empty())
             {
-                out_c << getIndent(indent) << "didTransition = false;" << std::endl;
+                out_c << getIndent(indent) << "did_transition = false;" << std::endl;
             }
             else
             {
@@ -1050,12 +1118,10 @@ void Writer::impl_runCycle(void)
                             indent++;
 
                             // if tracing is enabled
-#if 0
-                            if (writerConfig.doTracing)
+                            if (enable_tracing)
                             {
-                                writer->out_c << getIndent(indentLevel) << getTraceCall_exit(reader) << std::endl;
+                                out_c << getIndent(indent) << get_trace_call_exit(tr_st_b) << std::endl;
                             }
-#endif
 
                             // is exit function exists
                             if (collection->has_exit_statement(s))
@@ -1160,18 +1226,31 @@ void Writer::impl_runCycle(void)
                                     out_c << getIndent(indent) << styler->get_state_exit(s) << "(handle);" << std::endl;
                                 }
 
-#if 0
                                 if (enable_tracing)
                                 {
-                                    out_c << getIndent(indent) << this->getTraceCall_exit(state) << std::endl;
+                                    did_write = true;
+                                    //out_c << getIndent(indent) << "/* Trace state exit. */" << std::endl;
+                                    out_c << getIndent(indent) << get_trace_call_exit(s) << std::endl;
                                 }
-#endif
 
                                 /* Extra new-line */
                                 if (did_write)
                                 {
                                     out_c << std::endl;
                                 }
+                            }
+
+                            // TODO: perform transition actions.
+                            if (!t.action_content.empty())
+                            {
+                                out_c << getIndent(indent) << "/* Perform transition actions. */" << std::endl;
+                                // todo: fix the parser to return a string instead...
+                                for (auto item : t.action_content)
+                                {
+                                    out_c << getIndent(indent-1);
+                                    parse_declaration(item);
+                                }
+                                out_c << std::endl;
                             }
 
                             // TODO: do entry actions on all states entered
@@ -1193,16 +1272,14 @@ void Writer::impl_runCycle(void)
                                     out_c << getIndent(indent) << styler->get_state_entry(final_state) << "(handle);" << std::endl;
                                 }
 
-#if 0
                                 if (enable_tracing)
                                 {
                                     // Don't trace entering the choice states, since the state does not exist.
                                     if (!final_state.is_choice)
                                     {
-                                        out_c << getIndent(indentLevel) << this->getTraceCall_entry(finalState) << std::endl;
+                                        out_c << getIndent(indent) << this->get_trace_call_entry(final_state) << std::endl;
                                     }
                                 }
-#endif
                             }
 
                             // handle choice node?
@@ -1226,7 +1303,7 @@ void Writer::impl_runCycle(void)
                 out_c << getIndent(indent) << "else" << std::endl;
                 out_c << getIndent(indent) << "{" << std::endl;
                 indent++;
-                out_c << getIndent(indent) << "didTransition = false;" << std::endl;
+                out_c << getIndent(indent) << "did_transition = false;" << std::endl;
                 indent--;
                 out_c << getIndent(indent) << "}" << std::endl;
             }
@@ -1242,7 +1319,7 @@ void Writer::impl_runCycle(void)
                 out_c << getIndent(indent) << "(void) handle;" << std::endl;
             }
 
-            out_c << getIndent(indent) << "return (didTransition);" << std::endl;
+            out_c << getIndent(indent) << "return (did_transition);" << std::endl;
             out_c << "}" << std::endl << std::endl;
         }
     }
@@ -1279,10 +1356,18 @@ void Writer::impl_entryAction(void)
                     if (t.event.is_time_event)
                     {
                         out_c << getIndent(1) << "/* Start timer " << t.event.name << " with timeout of " << t.event.expire_time_ms << " ms. */" << std::endl;
-                        out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".timeout_ms = " << t.event.expire_time_ms << ";" << std::endl;
-                        out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".expireTime_ms = handle->timeNow_ms + " << t.event.expire_time_ms << ";" << std::endl;
-                        out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".isPeriodic = " << (t.event.is_periodic ? "true;" : "false;") << std::endl;
-                        out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".isStarted = true;" << std::endl;
+                        if (styler->get_config_use_builtin_time_event_handling())
+                        {
+                            out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".timeout_ms = " << t.event.expire_time_ms << ";" << std::endl;
+                            out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".expireTime_ms = handle->timeNow_ms + " << t.event.expire_time_ms << ";" << std::endl;
+                            out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".isPeriodic = " << (t.event.is_periodic ? "true;" : "false;") << std::endl;
+                            out_c << getIndent(1) << "handle->events.timeEvents." << t.event.name << ".isStarted = true;" << std::endl;
+                        }
+                        else
+                        {
+                            out_c << getIndent(1) << styler->get_start_timer() << "(handle, &handle->events.timeEvents." << t.event.name << ", " << t.event.expire_time_ms << ", " << (t.event.is_periodic ? "true" : "false") << ");" << std::endl;
+                        }
+
                         write_index++;
                         if (write_index < num_time_ev)
                         {
@@ -1336,7 +1421,15 @@ void Writer::impl_exitAction(void)
                 {
                     if (t.event.is_time_event)
                     {
-                        out_c << getIndent(1) << "handle->events.timeEvent." << t.event.name << ".isStarted = false;" << std::endl;
+                        if (styler->get_config_use_builtin_time_event_handling())
+                        {
+                            out_c << getIndent(1) << "handle->events.timeEvent." << t.event.name
+                                  << ".isStarted = false;" << std::endl;
+                        }
+                        else
+                        {
+                            out_c << getIndent(1) << styler->get_stop_timer() << "(handle, &handle->events.timeEvents." << t.event.name << ");" << std::endl;
+                        }
                     }
                 }
 
@@ -1641,15 +1734,14 @@ void Writer::parse_choice_path(State& initial_choice, unsigned int indent)
                         final_state = s;
 
                         // TODO: fix call so send state name.
-#if 0
-                        if (writerConfig.doTracing)
+                        if (enable_tracing)
                         {
-                            this->out_c << getIndent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
+                            out_c << getIndent(indent + 1) << get_trace_call_entry(final_state) << std::endl;
                         }
-#endif
 
-                        auto declarations = collection->get_state_declarations(final_state, Declaration::Entry);
-                        if (!declarations.empty())
+                        if (collection->has_entry_statement(final_state))
+                        //auto declarations = collection->get_state_declarations(final_state, Declaration::Entry);
+                        //if (!declarations.empty())
                         {
                             out_c << getIndent(indent + 1) << styler->get_state_entry(final_state) << "(handle);" << std::endl;
                         }
@@ -1693,15 +1785,14 @@ void Writer::parse_choice_path(State& initial_choice, unsigned int indent)
                     final_state = s;
 
                     // TODO: fix call so send state name.
-#if 0
-                    if (writerConfig.doTracing)
+                    if (enable_tracing)
                     {
-                        writer->out_c << getIndent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
+                        out_c << getIndent(indent + 1) << get_trace_call_entry(final_state) << std::endl;
                     }
-#endif
 
-                    auto declarations = collection->get_state_declarations(s, Declaration::Entry);
-                    if (!declarations.empty())
+                    if (collection->has_entry_statement(s))
+                    //auto declarations = collection->get_state_declarations(s, Declaration::Entry);
+                    //if (!declarations.empty())
                     {
                         out_c << getIndent(indent + 1) << styler->get_state_entry(final_state) << "(handle);" << std::endl;
                     }
@@ -1760,6 +1851,13 @@ bool Writer::parse_child_exits(State current_state, unsigned int indent, const S
         bool has_exit_action = false;
         while (top_state.id != tmp_state.id)
         {
+            if (collection->has_exit_statement(tmp_state))
+            {
+                has_exit_action = true;
+                break;
+            }
+            tmp_state = collection->get_state_by_id(tmp_state.parent);
+#if 0
             auto declarations = collection->get_state_declarations(tmp_state, Declaration::Exit);
             if (!declarations.empty())
             {
@@ -1767,6 +1865,7 @@ bool Writer::parse_child_exits(State current_state, unsigned int indent, const S
                 break;
             }
             tmp_state = collection->get_state_by_id(tmp_state.parent);
+#endif
         }
 
         if (has_exit_action)
@@ -1779,36 +1878,34 @@ bool Writer::parse_child_exits(State current_state, unsigned int indent, const S
             out_c << getIndent(indent) << "{" << std::endl;
             indent++;
 
-            auto declarations = collection->get_state_declarations(current_state, Declaration::Exit);
-            if (!declarations.empty())
+            if (collection->has_exit_statement(current_state))
+            //auto declarations = collection->get_state_declarations(current_state, Declaration::Exit);
+            //if (!declarations.empty())
             {
                 out_c << getIndent(indent) << styler->get_state_exit(current_state) << "(handle);" << std::endl;
             }
 
-#if 0
             if (enable_tracing)
             {
-                out_c << getIndent(indentLevel) << this->getTraceCall_exit(currentState) << std::endl;
+                out_c << getIndent(indent) << get_trace_call_exit(current_state) << std::endl;
             }
-#endif
 
             // go up to the top
             while (top_state.id != current_state.id)
             {
                 current_state = collection->get_state_by_id(current_state.parent);
 
-                auto updec = collection->get_state_declarations(current_state, Declaration::Exit);
-                if (!updec.empty())
+                if (collection->has_exit_statement(current_state))
+                //auto updec = collection->get_state_declarations(current_state, Declaration::Exit);
+                //if (!updec.empty())
                 {
                     out_c << getIndent(indent) << styler->get_state_exit(current_state) << "(handle);" << std::endl;
                 }
 
-#if 0
                 if (enable_tracing)
                 {
-                    out_c << getIndent(indentLevel) << this->getTraceCall_exit(currentState) << std::endl;
+                    out_c << getIndent(indent) << get_trace_call_exit(current_state) << std::endl;
                 }
-#endif
             }
 
             indent--;
@@ -1850,4 +1947,20 @@ std::string Writer::getIndent(const size_t level)
 std::string Writer::get_if_else_if(const unsigned int i)
 {
     return ((0 != i) ? "else if" : "if");
+}
+
+std::vector<State> Writer::find_path_to(const State &a, const State &b) const
+{
+    /* Find the path from state A to B. */
+    std::vector<State> path;
+    path.push_back(a);
+    bool path_found = false;
+
+
+
+    if (!path_found)
+    {
+        path.clear();
+    }
+    return (path);
 }

@@ -59,6 +59,7 @@ struct Transition
     Event event;
     bool has_guard;
     std::string guard_content;
+    std::vector<std::string> action_content;
 };
 
 struct Variable
@@ -93,6 +94,7 @@ public:
     void set_model_name(const std::string& s)
     {
         model_name = s;
+        model_name[0] = std::toupper(model_name[0]);
     }
 
     std::string get_model_name() const
@@ -386,6 +388,7 @@ class Style
 private:
     Collection* collection;
     bool use_simple_names;
+    bool use_builtin_time_event_handling;
     std::string delimiter;
     std::string run_cycle_top;
     std::string run_cycle_state;
@@ -396,11 +399,14 @@ private:
     std::string event_raise_base;
     std::string handle_type;
     std::string time_tick;
+    std::string time_event;
     std::string is_event_raised_base;
     std::string is_event_raised_end;
     std::string get_variable_base;
     std::string trace_entry;
     std::string trace_exit;
+    std::string start_timer;
+    std::string stop_timer;
 
     std::string get_base_decl(const State& state) const
     {
@@ -425,6 +431,7 @@ public:
     Style(Collection* collection, bool simple_names)
             : collection(collection)
             , use_simple_names(simple_names)
+            , use_builtin_time_event_handling(false)
             , delimiter("_")
             , run_cycle_top("runCycle")
             , run_cycle_state("_react")
@@ -435,14 +442,20 @@ public:
             , event_raise_base("raise_")
             , handle_type("Handle_t")
             , time_tick("_timeTick")
+            , time_event("timeEvent")
             , is_event_raised_base("is_")
             , is_event_raised_end("_raised")
             , get_variable_base("get_")
             , trace_entry("traceEntry")
             , trace_exit("traceExit")
+            , start_timer("startTimer")
+            , stop_timer("stopTimer")
     {}
 
     ~Style() = default;
+
+    bool get_config_use_simple_names() {return use_simple_names;}
+    bool get_config_use_builtin_time_event_handling() {return use_builtin_time_event_handling;}
 
     std::string get_top_run_cycle() const
     {
@@ -496,6 +509,11 @@ public:
         return (collection->get_model_name() + delimiter + time_tick);
     }
 
+    std::string get_time_event_raise() const
+    {
+        return (collection->get_model_name() + delimiter + event_raise_base + time_event);
+    }
+
     std::string get_event_is_raised(const Event& e) const
     {
         return (collection->get_model_name() + delimiter + is_event_raised_base + e.name + is_event_raised_end);
@@ -514,6 +532,16 @@ public:
     std::string get_trace_exit() const
     {
         return (collection->get_model_name() + delimiter + trace_exit);
+    }
+
+    std::string get_start_timer() const
+    {
+        return (collection->get_model_name() + delimiter + start_timer);
+    }
+
+    std::string get_stop_timer() const
+    {
+        return (collection->get_model_name() + delimiter + stop_timer);
     }
 };
 

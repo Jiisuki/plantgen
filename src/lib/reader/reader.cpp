@@ -56,6 +56,129 @@ void Reader_t::compile_collection()
     }
 }
 
+void Reader_t::debug_collection()
+{
+    /* Display complete collection to stdout. */
+    std::cout << std::endl << "Found following collection:" << std::endl;
+
+    for (auto s : collection->states)
+    {
+        std::cout << "  " << s.id << ": ";
+        if ("initial" == s.name)
+        {
+            std::cout << "[*]";
+        }
+        else if ("final" == s.name)
+        {
+            std::cout << "[ ]";
+        }
+        else
+        {
+            std::cout << s.name;
+        }
+
+        if (0 != s.parent)
+        {
+            std::cout << " belongs to [" << s.parent << ": " << collection->get_state_by_id(s.parent).name <<"]";
+        }
+        if (s.is_choice)
+        {
+            std::cout << " (choice)";
+        }
+        std::cout << std::endl;
+
+        for (auto d : collection->state_declarations)
+        {
+            if (d.state_id == s.id)
+            {
+                std::cout << "    ";
+                switch (d.type)
+                {
+                    case Declaration::Entry:
+                        std::cout << "entry / ";
+                        break;
+
+                    case Declaration::Exit:
+                        std::cout << "exit / ";
+                        break;
+
+                    case Declaration::OnCycle:
+                        std::cout << "oncycle / ";
+                        break;
+
+                    default:
+                        break;
+                }
+                std::cout << d.content << std::endl;
+            }
+        }
+
+        for (auto t : collection->transitions)
+        {
+            if (t.state_a == s.id)
+            {
+                std::cout << "      ";
+                State target = collection->get_state_by_id(t.state_b);
+                if (0 != target.id)
+                {
+                    std::cout << "-> " << target.name;
+                }
+
+                if ("null" != t.event.name)
+                {
+                    if (t.event.is_time_event)
+                    {
+                        std::cout << (t.event.is_periodic ? " every " : " after ") << t.event.expire_time_ms << " ms";
+                    }
+                    else
+                    {
+                        std::cout << " on event '" << t.event.name << "'";
+                    }
+                }
+
+                if (t.has_guard)
+                {
+                    std::cout << " [" << t.guard_content << "]";
+                }
+                std::cout << std::endl;
+            }
+        }
+
+        std::cout << std::endl;
+    }
+
+    bool any_v = false;
+    for (auto v : collection->variables)
+    {
+        if (!any_v)
+        {
+            std::cout << "Variables:" << std::endl;
+            any_v = true;
+        }
+
+        if (v.is_private)
+        {
+            std::cout << "  static ";
+        }
+        else
+        {
+            std::cout << "  ";
+        }
+
+        std::cout << v.type << " " << v.name;
+        if (v.has_specific_initial_value)
+        {
+            std::cout << " = " << v.initial_value << ";";
+        }
+        else
+        {
+            std::cout << ";";
+        }
+
+        std::cout << std::endl;
+    }
+}
+
 bool Reader_t::is_tr_arrow(const std::string& token)
 {
     bool is_arrow = false;
@@ -317,6 +440,7 @@ void Reader_t::collect_states()
                         t.state_b = idB;
                         t.has_guard = false;
                         t.guard_content = "";
+                        t.action_content.clear();
 
                         if ((4 < tokens.size()) && (":" == tokens[3]))
                         {
@@ -372,6 +496,24 @@ void Reader_t::collect_states()
                                                 guardStr += " " + tokens[i];
                                             }
                                             t.guard_content = guardStr.substr(1, guardStr.length()-2);
+                                        }
+                                        else if ((7 < tokens.size()) && ('/' == tokens[7].front()))
+                                        {
+                                            // action on transition
+                                            bool did_sub_push = false;
+                                            std::string actionStr = tokens[7];
+                                            for (size_t i = 8; i < tokens.size(); i++)
+                                            {
+                                                actionStr += " " + tokens[i];
+                                                if (';' == tokens[i].back())
+                                                {
+                                                    // push sub-action
+                                                    t.action_content.push_back(actionStr.substr(2, actionStr.length()-1));
+                                                    actionStr = "";
+                                                    did_sub_push = true;
+                                                }
+                                            }
+                                            t.action_content.push_back(actionStr.substr((did_sub_push ? 1 : 2), actionStr.length()-1));
                                         }
                                     }
                                     else

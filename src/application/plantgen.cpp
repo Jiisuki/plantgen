@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
     {
         //std::cout << "No filename provided!" << std::endl;
         //return (-1);
-        filename = "/mnt/c/repos/plantgen/example/bus.uml";
+        filename = "/mnt/c/repos/plantgen/example/plugin.h";
     }
 
     // append slash if non-existing on outdir
@@ -36,12 +36,13 @@ int main(int argc, char* argv[])
     bool verbose = true;
     bool simple_names = false;
     bool enable_tracing = false;
-    bool parent_first = false;
+    bool parent_first = true;
 
     // Read collection.
     Collection collection;
     Reader_t reader (&collection, filename, verbose);
     reader.compile_collection();
+    reader.debug_collection();
 
     // Configure styler.
     Style styler (&collection, simple_names);

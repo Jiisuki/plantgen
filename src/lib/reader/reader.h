@@ -34,5 +34,6 @@ public:
     Reader_t(Collection* collection, std::string filename, const bool verbose);
     ~Reader_t();
     void compile_collection();
+    void debug_collection();
 };
 
