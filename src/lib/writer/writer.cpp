@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <queue>
 
 void Writer::generate(const std::string &filename, const std::string &outdir)
 {
@@ -53,6 +54,9 @@ void Writer::generate(const std::string &filename, const std::string &outdir)
     out_h << getIndent(0) << "#include <stddef.h>" << std::endl;
     collection->stream_imports(out_h, "");
     out_h << std::endl;
+
+    // write statechart specific types.
+    decl_types();
 
     // write all states to .h
     decl_stateList();
@@ -209,7 +213,7 @@ void Writer::proto_raiseInEvent()
     bool did_write = false;
     for (auto e : collection->events)
     {
-        if ((!e.is_time_event) && (EventDirection::Incoming == e.direction))
+        if ((!e.is_time_event) && (EventDirection::Incoming == e.direction) && ("null" != e.name))
         {
             did_write = true;
             out_h << getIndent(0) << "void " << styler->get_event_raise(e) << "(" << styler->get_handle_type() << " handle";
@@ -303,7 +307,7 @@ void Writer::proto_timeTick()
                   << styler->get_time_event_raise()
                   << "("
                   << styler->get_handle_type()
-                  << " handle, const void* event);"
+                  << " handle, const " << collection->get_model_name() << "_EventId_t event);"
                   << std::endl;
         }
     }
@@ -408,15 +412,21 @@ void Writer::proto_traceExit(void)
 
 void Writer::proto_startTimer()
 {
-    out_h << "extern void " << styler->get_start_timer() << "(" << styler->get_handle_type() << " handle, const void* event, const size_t time_ms, const bool is_periodic);" << std::endl;
+    out_h << "extern void " << styler->get_start_timer() << "(" << styler->get_handle_type() << " handle, const " << collection->get_model_name() << "_EventId_t event, const size_t time_ms, const bool is_periodic);" << std::endl;
 }
 
 void Writer::proto_stopTimer()
 {
-    out_h << "extern void " << styler->get_stop_timer() << "(" << styler->get_handle_type() << " handle, const void* event);" << std::endl;
+    out_h << "extern void " << styler->get_stop_timer() << "(" << styler->get_handle_type() << " handle, const " << collection->get_model_name() << "_EventId_t event);" << std::endl;
 }
 
-void Writer::decl_stateList(void)
+void Writer::decl_types()
+{
+    out_h << getIndent(0) << "typedef uint8_t " << collection->get_model_name() << "_Bool_t;" << std::endl;
+    out_h << getIndent(0) << "typedef void* " << collection->get_model_name() << "_EventId_t;" << std::endl << std::endl;
+}
+
+void Writer::decl_stateList()
 {
     out_h << getIndent(0) << "typedef enum" << std::endl;
     out_h << getIndent(0) << "{" << std::endl;
@@ -487,7 +497,7 @@ void Writer::decl_eventList(void)
             out_h << getIndent(1) << "{" << std::endl;
             for (auto e : collection->events)
             {
-                if ((!e.is_time_event) && (EventDirection::Incoming == e.direction))
+                if ((!e.is_time_event) && (EventDirection::Incoming == e.direction) && ("null" != e.name))
                 {
                     out_h << getIndent(2) << "bool " << e.name << "_isRaised;" << std::endl;
                     if (e.require_parameter)
@@ -624,7 +634,7 @@ void Writer::decl_stateMachine(void)
             has_time_events = true;
         }
     }
-    if (has_time_events)
+    if (has_time_events && styler->get_config_use_builtin_time_event_handling())
     {
         out_h << getIndent(1) << "size_t timeNow_ms;" << std::endl;
     }
@@ -695,7 +705,7 @@ void Writer::impl_raiseInEvent()
 {
     for (auto e : collection->events)
     {
-        if ((!e.is_time_event) && (EventDirection::Incoming == e.direction))
+        if ((!e.is_time_event) && (EventDirection::Incoming == e.direction) && ("null" != e.name))
         {
             out_c << getIndent(0) << "void " << styler->get_event_raise(e) << "(" << styler->get_handle_type() << " handle";
             if (e.require_parameter)
@@ -841,7 +851,7 @@ void Writer::impl_timeTick(void)
         }
         else
         {
-            out_c << getIndent(0) << "void " << styler->get_time_event_raise() << "(" << styler->get_handle_type() << " handle, const void* event)" << std::endl;
+            out_c << getIndent(0) << "void " << styler->get_time_event_raise() << "(" << styler->get_handle_type() << " handle, const " << collection->get_model_name() << "_EventId_t event)" << std::endl;
             out_c << getIndent(0) << "{" << std::endl;
             unsigned int i = 0;
             for (auto e : collection->events)
@@ -1212,6 +1222,108 @@ void Writer::impl_runCycle(void)
                             out_c << getIndent(indent) << "{" << std::endl;
                             indent++;
 
+                            /// Better?
+                            /// 1) Find first common parent.
+                            /// 2) Get path from current to common parent.
+                            /// 3) Get path from target to common parent.
+
+                            unsigned int current_parent = s.parent;
+                            unsigned int common_parent = 0;
+
+                            /* If state is not in parent, then of course the common is 0. */
+                            while ((0 != current_parent) && (0 == common_parent))
+                            {
+                                /* Step up target until common found. */
+                                unsigned int target_parent = tr_st_b.parent;
+                                while ((0 != target_parent) && (0 == common_parent))
+                                {
+                                    if (target_parent == current_parent)
+                                    {
+                                        common_parent = target_parent;
+                                    }
+                                    else
+                                    {
+                                        target_parent = collection->get_state_by_id(target_parent).parent;
+                                    }
+                                }
+                                current_parent = collection->get_state_by_id(current_parent).parent;
+                            }
+
+                            std::cout << "Common parent: " << common_parent << std::endl;
+
+                            std::vector<State> path_out {};
+                            //std::vector<State> path_in_tmp {};
+
+                            State common_state = s;
+
+                            do
+                            {
+                                path_out.push_back(common_state);
+                                common_state = collection->get_state_by_id(common_state.parent);
+                            } while (common_state.id != common_parent);
+
+#if 0
+                            State target_state = tr_st_b;
+
+                            while (target_state.id != common_state.id)
+                            {
+                                path_in_tmp.push_back(target_state);
+                                target_state = collection->get_state_by_id(target_state.parent);
+                            };
+
+                            /* Check if entry to target actually leads somewhere else.. */
+                            auto path_addon = collection->find_entry_state(target_state);
+                            std::vector<State> path_in {};
+                            if (!path_in_tmp.empty())
+                            {
+                                for (auto it = path_in_tmp.end(); it != path_in_tmp.begin();)
+                                {
+                                    it--;
+
+                                    path_in.push_back(*it);
+                                }
+                            }
+                            for (auto _s : path_addon)
+                            {
+                                path_in.push_back(_s);
+                            }
+#endif
+                            auto path_in = collection->find_entry_state(tr_st_b);
+
+                            /* Here, we should have a list of states to exit and then enter.. right? */
+                            if (!path_out.empty())
+                            {
+                                //out_c << getIndent(indent) << "/* Handle super-step exit. */" << std::endl;
+                                for (auto _s : path_out)
+                                {
+                                    if (collection->has_exit_statement(_s))
+                                    {
+                                        out_c << getIndent(indent) << styler->get_state_exit(_s) << "(handle);" << std::endl;
+                                    }
+                                    if (enable_tracing && ("initial" != _s.name))
+                                    {
+                                        out_c << getIndent(indent) << get_trace_call_exit(_s) << std::endl;
+                                    }
+                                }
+                            }
+                            if (!path_in.empty())
+                            {
+                                //out_c << getIndent(indent) << "/* Handle super-step entry. */" << std::endl;
+                                for (auto _s : path_in)
+                                {
+                                    if (collection->has_entry_statement(_s))
+                                    {
+                                        out_c << getIndent(indent) << styler->get_state_entry(_s) << "(handle);" << std::endl;
+                                    }
+                                    if (enable_tracing && ("initial" != _s.name))
+                                    {
+                                        out_c << getIndent(indent) << get_trace_call_entry(_s) << std::endl;
+                                    }
+                                }
+                            }
+
+
+#if 0
                             if (parse_child_exits(s, indent, s, false))
                             {
                                 out_c << std::endl;
@@ -1291,6 +1403,7 @@ void Writer::impl_runCycle(void)
                             {
                                 out_c << getIndent(indent) << "handle->state = " << styler->get_state_name(final_state) << ";" << std::endl;
                             }
+#endif
 
                             indent--;
                             out_c << getIndent(indent) << "}" << std::endl;
@@ -1949,18 +2062,3 @@ std::string Writer::get_if_else_if(const unsigned int i)
     return ((0 != i) ? "else if" : "if");
 }
 
-std::vector<State> Writer::find_path_to(const State &a, const State &b) const
-{
-    /* Find the path from state A to B. */
-    std::vector<State> path;
-    path.push_back(a);
-    bool path_found = false;
-
-
-
-    if (!path_found)
-    {
-        path.clear();
-    }
-    return (path);
-}

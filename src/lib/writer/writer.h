@@ -50,6 +50,7 @@ private:
     void proto_traceExit();
     void proto_startTimer();
     void proto_stopTimer();
+    void decl_types();
     void decl_stateList();
     void decl_eventList();
     void decl_variableList();
@@ -78,8 +79,6 @@ private:
     std::string getIndent(const size_t level);
     std::string get_if_else_if(const unsigned int i);
     void errorReport(std::string str, unsigned int line);
-
-    std::vector<State> find_path(const Transition& transition) const;
 
 public:
 

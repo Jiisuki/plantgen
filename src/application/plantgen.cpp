@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
 
     bool verbose = true;
     bool simple_names = false;
-    bool enable_tracing = false;
+    bool enable_tracing = true;
     bool parent_first = true;
 
     // Read collection.

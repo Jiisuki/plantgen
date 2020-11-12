@@ -151,56 +151,36 @@ public:
         // this function will check if the in state contains an initial sub-state,
         // and follow the path until a state is reached that does not contain an
         // initial sub-state.
-        std::vector<State> states;
-        states.push_back(in);
+        std::vector<State> path;
+        path.push_back(in);
 
-        // check if the state contains any initial sub-state
-        bool found_next = true;
-        while (found_next)
+        State initial {};
+
+        for (auto s : states)
         {
-            found_next = false;
-            for (auto s : states)
+            if ((s.parent == in.id) && ("initial" == s.name))
             {
-                if ((in.id != s.id) && (in.id == s.parent) && ("initial" == s.name))
-                {
-                    // a child state was found that is an initial state. Get transition
-                    // from this initial state, it should be one and only one.
-                    auto transitions = get_transitions_from_state(s);
-                    if (transitions.empty())
-                    {
-                        //errorReport("Initial state in [" + this->styler->getStateName(in) + "] as no transitions.", __LINE__);
-                    }
-                    else
-                    {
-                        // get the transition
-                        State tmp = get_state_by_id(transitions[0].state_b);
-                        if (0 == tmp.id)
-                        {
-                            //this->errorReport("Initial state in [" + this->styler->getStateName(in) + "] has no target.", __LINE__);
-                        }
-                        else
-                        {
-                            // recursively check the state, we can do this by
-                            // exiting the for loop but continuing from the top.
-                            states.push_back(tmp);
-                            in = tmp;
+                // Add initial state to path, since we want to check transition actions (?)
+                initial = s;
+                path.push_back(s);
+                break;
+            }
+        }
 
-                            // if the state is a choice, we need to stop here.
-                            if (tmp.is_choice)
-                            {
-                                found_next = false;
-                            }
-                            else
-                            {
-                                found_next = true;
-                            }
-                        }
-                    }
+        if (0 != initial.id)
+        {
+            auto transitions = get_transitions_from_state(initial);
+            if (!transitions.empty())
+            {
+                auto deeper = find_entry_state(get_state_by_id(transitions[0].state_b));
+                for (auto s : deeper)
+                {
+                    path.push_back(s);
                 }
             }
         }
 
-        return (states);
+        return (path);
     }
 
     std::vector<State> find_path_to_first_state() const

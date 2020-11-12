@@ -3,7 +3,6 @@ scale 0.75
 
 header
 model Plugin
-import local example.h
 private var canGetData : bool
 public var timeout : bool = false
 endheader
@@ -12,7 +11,7 @@ endheader
 Wait -> Wait : every 30 s / ${timeout} = true; ${canGetData} = false
 Wait -down-> Run : Start
 state Run {
-    [*] -> CheckData
+    [*] -> CheckData / raise Checking
     CheckData : entry / raise Checked
     CheckData -> AddData : Checked
     state AddData {
@@ -20,6 +19,7 @@ state Run {
         Ask : entry / raise More
         Ask : exit / raise Whatever
         Ask -> Wait : Abort / ${canGetData} = false
+        Ask -> Run : Reset
     }
     AddData -down-> Write : More
     AddData : entry / ${canGetData} = true
