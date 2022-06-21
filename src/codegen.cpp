@@ -2,12 +2,13 @@
  *  @brief Generates code from plantuml.
  */
 
-#include <stdint.h>
+#include <cstdint>
 #include <vector>
 #include <iostream>
+#include <filesystem>
 
-#include <reader.hpp>
-#include <writer.hpp>
+#include "../include/reader.hpp"
+#include "../include/writer.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -32,19 +33,23 @@ int main(int argc, char* argv[])
         outdir += "/";
     }
 
-    Writer_t* writer = new Writer_t();
+    if (!std::filesystem::exists(outdir))
+    {
+        std::cout << "Creating output directory '" << outdir << "'" << std::endl;
+        std::filesystem::create_directories(outdir);
+    }
 
     /* configure writer */
-    writer->enableSimpleNames();
-    writer->enableVerbose();
-    writer->enableParentFirstExecution();
-    writer->enableTracing();
+    Writer_Config_t cfg {};
+    cfg.useSimpleNames = true;
+    cfg.verbose = true;
+    cfg.doTracing = true;
+    cfg.parentFirstExecution = true;
+
+    Writer_t writer (filename, outdir, cfg);
 
     /* generate code */
-    writer->generateCode(filename, outdir);
-
-    /* cleanup */
-    delete writer;
+    writer.generateCode();
 
     return (0);
 }

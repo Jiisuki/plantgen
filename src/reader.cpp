@@ -4,12 +4,12 @@
 
 #include <vector>
 #include <string>
-#include <stdint.h>
+#include <cstdint>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
-#include <reader.hpp>
+#include "../include/reader.hpp"
 
 Reader_t::Reader_t(std::string filename, const bool verbose)
 {
@@ -37,7 +37,7 @@ Reader_t::~Reader_t()
 }
 
 // public
-std::string Reader_t::getModelName(void)
+std::string Reader_t::getModelName()
 {
     return (this->modelName);
 }
@@ -218,6 +218,18 @@ Event_t* Reader_t::getInEvent(size_t id)
         }
     }
     return (NULL);
+}
+
+Event_t* Reader_t::findEvent(const std::string &name)
+{
+    for (auto & event : events)
+    {
+        if (event.name == name)
+        {
+            return &event;
+        }
+    }
+    return nullptr;
 }
 
 // public
@@ -457,7 +469,8 @@ void Reader_t::collectStates(void)
                 {
                     if ((0 == tokens[0].compare("model")) && (2 == tokens.size()))
                     {
-                        this->modelName = tokens[1];
+                        this->modelName = static_cast<char>(std::toupper(tokens[1][0]));
+                        this->modelName.append(tokens[1].substr(1));
 
                         if (this->verbose)
                         {

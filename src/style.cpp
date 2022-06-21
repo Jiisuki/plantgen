@@ -2,51 +2,49 @@
  *  @brief Implementation of the styling class.
  */
 
-#include "style.hpp"
 #include <string>
-#include <reader.hpp>
+#include "../include/style.hpp"
+#include "../include/reader.hpp"
 
-Style_t::Style_t(Reader_t* reader)
-{
-    this->reader = reader;
-    this->useSimpleNames = false;
-}
+Style_t::Style_t(Reader_t& reader) : reader(reader), useSimpleNames(false)
+{}
 
 Style_t::~Style_t()
 {
     /* It is not up to us to cleanup. */
 }
 
-void Style_t::enableSimpleNames(void)
+void Style_t::enableSimpleNames()
 {
     this->useSimpleNames = true;
 }
 
-void Style_t::disableSimpleNames(void)
+void Style_t::disableSimpleNames()
 {
     this->useSimpleNames = false;
 }
 
-std::string Style_t::appendModelName(const std::string str)
+std::string Style_t::appendModelName(const std::string& str)
 {
-    return (this->reader->getModelName() + "_" + str);
+    return (reader.getModelName() + "_" + str);
 }
 
 std::string Style_t::getStateBaseDecl(const State_t* state)
 {
     std::string decl_base = "";
 
-    if (true != this->useSimpleNames)
+    if (!useSimpleNames)
     {
-        State_t* parent = reader->getStateById(state->parent);
-        if (NULL != parent)
+        State_t* parent = reader.getStateById(state->parent);
+        if (nullptr != parent)
         {
             decl_base = getStateBaseDecl(parent) + "_";
         }
     }
 
     /* Add first letter upper-case. */
-    decl_base += std::toupper(state->name[0]);
+    decl_base += static_cast<char>(std::toupper(state->name[0]));
+
     /* Add rest as is. */
     decl_base += state->name.substr(1);
     //decl_base += state->name;
@@ -54,72 +52,96 @@ std::string Style_t::getStateBaseDecl(const State_t* state)
     return (decl_base);
 }
 
-std::string Style_t::getTopRunCycle(void)
+std::string Style_t::getTopRunCycle()
 {
-    return (this->appendModelName("runCycle"));
+    return "run_cycle";
 }
 
 std::string Style_t::getStateRunCycle(const State_t* state)
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_react"));
+    auto b = this->getStateBaseDecl(state);
+    if (!b.empty())
+    {
+        b[0] = static_cast<char>(std::tolower(b[0]));
+    }
+    return "state_" + b + "_react";
 }
 
 std::string Style_t::getStateEntry(const State_t* state)
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_entryAction"));
+    auto b = this->getStateBaseDecl(state);
+    if (!b.empty())
+    {
+        b[0] = static_cast<char>(std::tolower(b[0]));
+    }
+    return "state_" + b + "_entry_action";
 }
 
 std::string Style_t::getStateExit(const State_t* state)
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_exitAction"));
+    auto b = this->getStateBaseDecl(state);
+    if (!b.empty())
+    {
+        b[0] = static_cast<char>(std::tolower(b[0]));
+    }
+    return "state_" + b + "_exit_action";
 }
 
 std::string Style_t::getStateName(const State_t* state)
 {
-    return (this->appendModelName("State_" + this->getStateBaseDecl(state)));
+    return (this->appendModelName("State") + "::" + this->getStateBaseDecl(state));
 }
 
-std::string Style_t::getStateType(void)
+std::string Style_t::getStateNamePure(const State_t* state)
 {
-    return (this->appendModelName("State_t"));
+    return this->getStateBaseDecl(state);
+}
+
+std::string Style_t::getStateType()
+{
+    return (this->appendModelName("State"));
 }
 
 std::string Style_t::getEventRaise(const Event_t* event)
 {
-    return (this->appendModelName("raise_" + event->name));
+    return "raise_" + event->name;
 }
 
-std::string Style_t::getEventRaise(const std::string eventName)
+std::string Style_t::getEventRaise(const std::string& eventName)
 {
-    return (this->appendModelName("raise_" + eventName));
+    return "raise_" + eventName;
+    //return (this->appendModelName("raise_" + eventName));
 }
 
-std::string Style_t::getHandleType(void)
+std::string Style_t::getTimeTick()
 {
-    return (this->appendModelName("Handle_t"));
-}
-
-std::string Style_t::getTimeTick(void)
-{
-    return (this->appendModelName("_timeTick"));
+    return "time_tick";
 }
 
 std::string Style_t::getEventIsRaised(const Event_t* event)
 {
-    return (this->appendModelName("is_" + event->name + "_raised"));
+    return "is_" + event->name + "_raised";
+    //return (this->appendModelName("is_" + event->name + "_raised"));
+}
+
+std::string Style_t::getEventValue(const Event_t* event)
+{
+    return "get_" + event->name + "_value";
+    //return (this->appendModelName("is_" + event->name + "_raised"));
 }
 
 std::string Style_t::getVariable(const Variable_t* var)
 {
-    return (this->appendModelName("get_" + var->name));
+    return "get_" + var->name;
+    //return (this->appendModelName("get_" + var->name));
 }
 
-std::string Style_t::getTraceEntry(void)
+std::string Style_t::getTraceEntry()
 {
-    return (this->appendModelName("traceEntry"));
+    return "trace_state_enter";
 }
 
-std::string Style_t::getTraceExit(void)
+std::string Style_t::getTraceExit()
 {
-    return (this->appendModelName("traceExit"));
+    return "trace_state_exit";
 }
