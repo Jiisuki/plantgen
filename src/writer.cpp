@@ -268,7 +268,10 @@ void Writer_t::decl_eventList()
         out_h << getIndent(0) << "struct " << reader.getModelName() << "_OutEvent" << std::endl;
         out_h << getIndent(0) << "{" << std::endl;
         out_h << getIndent(1) << reader.getModelName() << "_OutEventId id;" << std::endl;
-        out_h << getIndent(1) << reader.getModelName() << "_OutEventData parameter;" << std::endl;
+        if (!paramData.empty())
+        {
+            out_h << getIndent(1) << reader.getModelName() << "_OutEventData parameter;" << std::endl;
+        }
         out_h << getIndent(1) << reader.getModelName() << "_OutEvent() = default;" << std::endl;
         out_h << getIndent(1) << "~" << reader.getModelName() << "_OutEvent() = default;" << std::endl;
         out_h << "};" << std::endl << std::endl;
@@ -512,7 +515,6 @@ void Writer_t::decl_stateMachine()
         // time now counter
         out_h << getIndent(1) << "size_t time_now_ms;" << std::endl;
     }
-    out_h << getIndent(1) << "void init();" << std::endl;
     out_h << getIndent(1) << "void " << styler.getTopRunCycle() << "();" << std::endl;
     if (config.doTracing)
     {
@@ -595,67 +597,39 @@ void Writer_t::decl_stateMachine()
     }
     out_h << std::endl;
     out_h << getIndent(0) << "public:" << std::endl;
+    out_h << getIndent(1) << reader.getModelName() << "() : ";
+    out_h << "state()";
+    if (0 < reader.getTimeEventCount())
+    {
+        out_h << ", time_events()";
+    }
+    if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
+    {
+        out_h << ", event_queue()";
+    }
+    if (0 < reader.getOutEventCount())
+    {
+        out_h << ", out_event_queue()";
+    }
+    if (0 < reader.getVariableCount())
+    {
+        out_h << ", variables()";
+    }
+    if (0 < reader.getTimeEventCount())
+    {
+        out_h << ", time_now_ms()";
+    }
+    out_h << " {}" << std::endl;
+    out_h << getIndent(1) << "~" << reader.getModelName() << "() = default;" << std::endl;
+    // add all prototypes.
     if (config.doTracing)
     {
-        out_h << getIndent(1) << reader.getModelName() << "(const TraceEntry_t& entered_cb, const TraceExit_t& exited_cb) : ";
-        out_h << "state()";
-        if (0 < reader.getTimeEventCount())
-        {
-            out_h << ", time_events()";
-        }
-        if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
-        {
-            out_h << ", event_queue()";
-        }
-        if (0 < reader.getOutEventCount())
-        {
-            out_h << ", out_event_queue()";
-        }
-        if (0 < reader.getVariableCount())
-        {
-            out_h << ", variables()";
-        }
-        out_h << ", trace_enter_function(entered_cb), trace_exit_function(exited_cb)";
-        if (0 < reader.getTimeEventCount())
-        {
-            out_h << ", time_now_ms()";
-        }
-        out_h << std::endl;
-        out_h << getIndent(1) << "{" << std::endl;
-        out_h << getIndent(2) << "init();" << std::endl;
-        out_h << getIndent(1) << "}" << std::endl;
-    } else
-    {
-        out_h << getIndent(1) << reader.getModelName() << "() : ";
-        out_h << "state()";
-        if (0 < reader.getTimeEventCount())
-        {
-            out_h << ", time_events()";
-        }
-        if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
-        {
-            out_h << ", event_queue()";
-        }
-        if (0 < reader.getOutEventCount())
-        {
-            out_h << ", out_event_queue()";
-        }
-        if (0 < reader.getVariableCount())
-        {
-            out_h << ", variables()";
-        }
-        if (0 < reader.getTimeEventCount())
-        {
-            out_h << ", time_now_ms()";
-        }
-        out_h << std::endl;
-        out_h << getIndent(1) << "{" << std::endl;
-        out_h << getIndent(2) << "init();" << std::endl;
-        out_h << getIndent(1) << "}" << std::endl;
+        out_h << getIndent(1) << "void set_trace_enter_callback(const TraceEntry_t& enter_cb);" << std::endl;
+        out_h << getIndent(1) << "void set_trace_exit_callback(const TraceExit_t& exit_cb);" << std::endl;
+        out_h << getIndent(1) << "std::string get_state_name(" << styler.getStateType() << " s);" << std::endl;
+        out_h << getIndent(1) << "[[nodiscard]] " << styler.getStateType() << " get_state() const;" << std::endl;
     }
-    out_h << getIndent(1) << "~" << reader.getModelName() << "() = default;" << std::endl;
-
-    // add all prototypes.
+    out_h << getIndent(1) << "void init();" << std::endl;
     if (0 < reader.getTimeEventCount())
     {
         out_h << getIndent(1) << "void " << styler.getTimeTick() << "(" << "size_t time_elapsed_ms);" << std::endl;
@@ -1073,6 +1047,41 @@ void Writer_t::impl_traceCalls()
         out_c << getIndent(1) << "{" << std::endl;
         out_c << getIndent(2) << "trace_exit_function(exited_state);" << std::endl;
         out_c << getIndent(1) << "}" << std::endl;
+        out_c << "}" << std::endl << std::endl;
+
+        out_c << "void " << reader.getModelName() << "::set_trace_enter_callback(const TraceEntry_t& enter_cb)" << std::endl;
+        out_c << "{" << std::endl;
+        out_c << getIndent(1) << "trace_enter_function = enter_cb;" << std::endl;
+        out_c << "}" << std::endl << std::endl;
+
+        out_c << "void " << reader.getModelName() << "::set_trace_exit_callback(const TraceExit_t& exit_cb)" << std::endl;
+        out_c << "{" << std::endl;
+        out_c << getIndent(1) << "trace_exit_function = exit_cb;" << std::endl;
+        out_c << "}" << std::endl << std::endl;
+
+        out_c << "std::string " << reader.getModelName() << "::get_state_name(" << styler.getStateType() << " s)" << std::endl;
+        out_c << "{" << std::endl;
+        out_c << getIndent(1) << "switch (s)" << std::endl;
+        out_c << getIndent(1) << "{" << std::endl;
+        for (std::size_t i = 0; i < reader.getStateCount(); i++)
+        {
+            auto s = reader.getState(i);
+            /* Only write down state on actual states that the machine may stay in. */
+            if ((nullptr != s) && ("initial" != s->name) && ("final" != s->name) && (!s->isChoice))
+            {
+                out_c << getIndent(2) << "case " << styler.getStateType() << "::" << styler.getStateNamePure(s) << ":" << std::endl;
+                out_c << getIndent(3) << "return \"" << styler.getStateNamePure(s) << "\";" << std::endl << std::endl;
+            }
+        }
+        out_c << getIndent(2) << "default:" << std::endl;
+        out_c << getIndent(3) << "// Invalid state." << std::endl;
+        out_c << getIndent(3) << "return {};" << std::endl;
+        out_c << getIndent(1) << "}" << std::endl;
+        out_c << "}" << std::endl << std::endl;
+
+        out_c << styler.getStateType() << " " << reader.getModelName() << "::get_state() const" << std::endl;
+        out_c << "{" << std::endl;
+        out_c << getIndent(1) << "return state;" << std::endl;
         out_c << "}" << std::endl << std::endl;
     }
 }
