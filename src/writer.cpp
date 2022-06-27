@@ -73,6 +73,7 @@ void Writer_t::generateCode()
     out_h << getIndent(0) << "#include <cstddef>" << std::endl;
     out_h << getIndent(0) << "#include <functional>" << std::endl;
     out_h << getIndent(0) << "#include <deque>" << std::endl;
+    out_h << getIndent(0) << "#include <string>" << std::endl;
 
     for (size_t i = 0; i < reader.getImportCount(); i++)
     {
@@ -105,8 +106,6 @@ void Writer_t::generateCode()
     decl_stateMachine();
 
     // write header to .c
-    out_c << getIndent(0) << "#include <cstdint>" << std::endl;
-    out_c << getIndent(0) << "#include <cstddef>" << std::endl;
     out_c << getIndent(0) << "#include \"" << model << ".h\"" << std::endl;
 
     for (size_t i = 0; i < reader.getImportCount(); i++)
@@ -521,28 +520,6 @@ void Writer_t::decl_stateMachine()
         out_h << getIndent(1) << "void " << styler.getTraceEntry() << "(" << styler.getStateType() << " state);" << std::endl;
         out_h << getIndent(1) << "void " << styler.getTraceExit() << "(" << styler.getStateType() << " state);" << std::endl;
     }
-#if 0
-    if (0 < reader.getInEventCount())
-    {
-        out_h << getIndent(1) << "void clear_in_events();" << std::endl;
-    }
-    if (0 < reader.getTimeEventCount())
-    {
-        out_h << getIndent(1) << "void clear_time_events();" << std::endl;
-    }
-    if (0 < reader.getOutEventCount())
-    {
-        out_h << getIndent(1) << "void clear_out_events();" << std::endl;
-    }
-    if (0 < reader.getInternalEventCount())
-    {
-        out_h << getIndent(1) << "void clear_internal_events();" << std::endl;
-    }
-    if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
-    {
-        out_h << getIndent(1) << "bool is_internal_event_raised();" << std::endl;
-    }
-#endif
     for (size_t i = 0; i < reader.getInternalEventCount(); i++)
     {
         Event_t* ev = reader.getInternalEvent(i);
@@ -626,7 +603,7 @@ void Writer_t::decl_stateMachine()
     {
         out_h << getIndent(1) << "void set_trace_enter_callback(const TraceEntry_t& enter_cb);" << std::endl;
         out_h << getIndent(1) << "void set_trace_exit_callback(const TraceExit_t& exit_cb);" << std::endl;
-        out_h << getIndent(1) << "std::string get_state_name(" << styler.getStateType() << " s);" << std::endl;
+        out_h << getIndent(1) << "static std::string get_state_name(" << styler.getStateType() << " s);" << std::endl;
         out_h << getIndent(1) << "[[nodiscard]] " << styler.getStateType() << " get_state() const;" << std::endl;
     }
     out_h << getIndent(1) << "void init();" << std::endl;
