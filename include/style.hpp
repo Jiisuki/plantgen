@@ -7,31 +7,34 @@
 #include <string>
 #include "reader.hpp"
 
-class Style_t
+class Style
 {
 private:
-    bool useSimpleNames;
-    Reader_t& reader;
-    std::string appendModelName(const std::string& str);
-    std::string getStateBaseDecl(const State_t* state);
+    bool use_simple_names;
+    Reader& reader;
+    std::string get_state_base_decl(const State* state);
+    static std::string convert_snake_case(const std::string& str);
+    static void transform_lower(std::string& str);
 public:
-    explicit Style_t(Reader_t& reader);
-    ~Style_t();
-    void enableSimpleNames();
-    void disableSimpleNames();
-    std::string getTopRunCycle();
-    std::string getStateRunCycle(const State_t* state);
-    std::string getStateEntry(const State_t* state);
-    std::string getStateExit(const State_t* state);
-    std::string getStateName(const State_t* state);
-    std::string getStateNamePure(const State_t* state);
-    std::string getStateType();
-    std::string getEventRaise(const Event_t* event);
-    std::string getEventRaise(const std::string& eventName);
-    std::string getTimeTick();
-    std::string getEventIsRaised(const Event_t* event);
-    std::string getEventValue(const Event_t* event);
-    std::string getVariable(const Variable_t* var);
-    std::string getTraceEntry();
-    std::string getTraceExit();
+    explicit Style(Reader& reader);
+    ~Style() = default;
+
+    void set_simple_names(bool enable);
+
+    static std::string get_top_run_cycle();
+    std::string get_state_run_cycle(const State* state);
+    std::string get_state_entry(const State* state);
+    std::string get_state_exit(const State* state);
+    std::string get_state_name(const State* state);
+    std::string get_state_name_pure(const State* state);
+    static std::string get_state_type();
+    static std::string get_event_raise(const Event* event);
+    static std::string get_event_raise(const std::string& eventName);
+    static std::string get_event_name(const Event* event);
+    static std::string get_time_tick();
+    static std::string get_event_is_raised(const Event* event);
+    static std::string get_event_value(const Event* event);
+    static std::string get_variable_name(const Variable* var);
+    static std::string get_trace_entry();
+    static std::string get_trace_exit();
 };

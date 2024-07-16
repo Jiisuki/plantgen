@@ -2,84 +2,70 @@
  *  @brief Implementation of the writer class.
  */
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include "../include/reader.hpp"
 #include "../include/writer.hpp"
+#include "../include/reader.hpp"
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
-Writer_t::Writer_t(const std::string &filename, const std::string &outdir, const Writer_Config_t& cfg) :
-    config(cfg), filename(filename), outdir(outdir), out_c(), out_h(), reader(filename, cfg.verbose), styler(reader)
-{}
-
-Writer_t::~Writer_t()
+Writer::Writer(const std::string& filename, const std::string& outdir, const WriterConfig& cfg) :
+    config(cfg), filename(filename), outdir(outdir), reader(filename, cfg.verbose), styler(reader), indent()
 {
-    if (out_c.is_open())
-    {
-        out_c.close();
-    }
-    if (out_h.is_open())
-    {
-        out_h.close();
-    }
 }
 
-void Writer_t::generateCode()
+void Writer::generateCode()
 {
-    if (config.useSimpleNames)
-    {
-        styler.enableSimpleNames();
-    }
-    else
-    {
-        styler.disableSimpleNames();
-    }
+    styler.set_simple_names(config.use_simple_names);
 
-    auto model = reader.getModelName();
+    auto model = reader.get_model_name();
     if (!model.empty())
     {
         model[0] = static_cast<char>(std::tolower(model[0]));
     }
 
-    const std::string outfile_c = outdir + model + ".cpp";
-    const std::string outfile_h = outdir + model + ".h";
+    const auto outfile_c = outdir + model + ".cpp";
+    const auto outfile_h = outdir + model + ".h";
 
     if (config.verbose)
     {
-        std::cout << "Generating code from '" << filename << "' > '" << outfile_c << "' and '" << outfile_h << "' ..." << std::endl;
+        std::cout << "Generating code from '" << filename << "' > '" << outfile_c << "' and '" << outfile_h << "' ..."
+                  << std::endl;
     }
 
+    std::ofstream out_c {};
     out_c.open(outfile_c);
+
+    std::ofstream out_h {};
     out_h.open(outfile_h);
 
     if (!out_c.is_open() || !out_h.is_open())
     {
-        errorReport("Failed to open output files, does directory exist?", __LINE__);
+        error_report("Failed to open output files, does directory exist?", __LINE__);
         return;
     }
 
     out_h << "/** @file" << std::endl;
-    out_h << " *  @brief Interface to the " << reader.getModelName() << " state machine." << std::endl;
+    out_h << " *  @brief Interface to the " << reader.get_model_name() << " state machine." << std::endl;
     out_h << " *" << std::endl;
     out_h << " *  @startuml" << std::endl;
-    for (size_t i = 0; i < reader.getUmlLineCount(); i++)
+    for (size_t i = 0; i < reader.get_uml_line_count(); i++)
     {
-        out_h << " *  " << reader.getUmlLine(i) << std::endl;
+        out_h << " *  " << reader.get_uml_line(i) << std::endl;
     }
     out_h << " *  @enduml" << std::endl;
     out_h << " */" << std::endl << std::endl;
 
-    out_h << getIndent(0) << "#include <cstdint>" << std::endl;
-    out_h << getIndent(0) << "#include <cstddef>" << std::endl;
-    out_h << getIndent(0) << "#include <functional>" << std::endl;
-    out_h << getIndent(0) << "#include <deque>" << std::endl;
-    out_h << getIndent(0) << "#include <string>" << std::endl;
+    out_h << get_indent() << "#include <cstdint>" << std::endl;
+    out_h << get_indent() << "#include <cstddef>" << std::endl;
+    out_h << get_indent() << "#include <functional>" << std::endl;
+    out_h << get_indent() << "#include <deque>" << std::endl;
+    out_h << get_indent() << "#include <string>" << std::endl;
 
-    for (size_t i = 0; i < reader.getImportCount(); i++)
+    for (auto i = 0u; i < reader.getImportCount(); i++)
     {
-        Import_t* imp = reader.getImport(i);
-        out_h << getIndent(0) << "#include ";
-        if (imp->isGlobal)
+        auto imp = reader.getImport(i);
+        out_h << get_indent() << "#include ";
+        if (imp->is_global)
         {
             out_h << "<" << imp->name << ">" << std::endl;
         }
@@ -90,29 +76,35 @@ void Writer_t::generateCode()
     }
     out_h << std::endl;
 
+    // setup namespace
+    start_namespace(out_h);
+
     // write all states to .h
-    decl_stateList();
+    decl_state_list(out_h);
 
     // write all event types
-    decl_eventList();
+    decl_event_list(out_h);
 
     // write all variables
-    decl_variableList();
+    decl_variable_list(out_h);
 
     // write tracing callback types
-    decl_tracingCallback();
+    decl_tracing_callback(out_h);
 
     // write main declaration
-    decl_stateMachine();
+    decl_state_machine(out_h);
+
+    // end namespace
+    end_namespace(out_h);
 
     // write header to .c
-    out_c << getIndent(0) << "#include \"" << model << ".h\"" << std::endl;
+    out_c << get_indent() << "#include \"" << model << ".h\"" << std::endl << std::endl;
 
-    for (size_t i = 0; i < reader.getImportCount(); i++)
+    for (auto i = 0u; i < reader.getImportCount(); i++)
     {
-        Import_t* imp = reader.getImport(i);
-        out_c << getIndent(0) << "#include ";
-        if (imp->isGlobal)
+        auto imp = reader.getImport(i);
+        out_c << get_indent() << "#include ";
+        if (imp->is_global)
         {
             out_c << "<" << imp->name << ">" << std::endl;
         }
@@ -123,1246 +115,1230 @@ void Writer_t::generateCode()
     }
     out_c << std::endl;
 
+    // setup namespace
+    start_namespace(out_c);
+
     // find first state on init
-    const std::vector<State_t*> firstState = findInitState();
+    const auto firstState = find_init_state();
 
     // write init implementation
-    impl_init(firstState);
+    impl_init(out_c, firstState);
 
     // write trace calls wrappers
-    impl_traceCalls();
+    impl_trace_calls(out_c);
 
     // write all raise event functions
-    impl_raiseInEvent();
-    impl_checkOutEvent();
-    impl_getVariable();
-    impl_timeTick();
-    impl_clearEvents();
-    impl_checkAnyEventRaised();
-    impl_topRunCycle();
-    impl_runCycle();
-    impl_entryAction();
-    impl_exitAction();
-    impl_raiseOutEvent();
-    impl_raiseInternalEvent();
+    impl_raise_in_event(out_c);
+    impl_check_out_event(out_c);
+    impl_get_variable(out_c);
+    impl_time_tick(out_c);
+    impl_top_run_cycle(out_c);
+    impl_run_cycle(out_c);
+    impl_entry_action(out_c);
+    impl_exit_action(out_c);
+    impl_raise_out_event(out_c);
+    impl_raise_internal_event(out_c);
 
-    /* end with a new line. */
-    out_c << std::endl;
-    out_h << std::endl;
+    // end namespace
+    end_namespace(out_c);
 
-    /* close streams. */
+    // close streams
     out_c.close();
     out_h.close();
 }
 
-void Writer_t::errorReport(const std::string& str, unsigned int line)
+void Writer::error_report(const std::string& str, unsigned int line)
 {
-    std::string fname = __FILE__;
-    const size_t last_slash = fname.find_last_of("/");
-    std::cout << "ERR: " << str << " - " << fname.substr(last_slash+1) << ": " << line << std::endl;
+    std::string  filename   = __FILE__;
+    const size_t last_slash = filename.find_last_of('/');
+    std::cout << "ERR: " << str << " - " << filename.substr(last_slash + 1) << ": " << line << std::endl;
 }
 
-void Writer_t::proto_runCycle()
+void Writer::increase_indent()
 {
-    out_c << std::endl;
+    indent++;
 }
 
-void Writer_t::proto_entryAction()
+void Writer::decrease_indent()
 {
-}
-
-void Writer_t::proto_exitAction()
-{
-}
-
-void Writer_t::proto_raiseInEvent()
-{
-}
-
-void Writer_t::proto_raiseOutEvent()
-{
-}
-
-void Writer_t::proto_raiseInternalEvent()
-{
-}
-
-void Writer_t::proto_timeTick()
-{
-}
-
-void Writer_t::proto_checkOutEvent()
-{
-}
-
-void Writer_t::proto_clearEvents()
-{
-}
-
-void Writer_t::decl_stateList()
-{
-    out_h << getIndent(0) << "enum class " << reader.getModelName() << "_State" << std::endl;
-    out_h << getIndent(0) << "{" << std::endl;
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    if (0 < indent)
     {
-        State_t* state = reader.getState(i);
+        indent--;
+    }
+}
+
+void Writer::reset_indent()
+{
+    indent = 0;
+}
+
+void Writer::start_namespace(std::ofstream& out)
+{
+    reset_indent();
+    out << "namespace " << reader.get_model_name() << std::endl;
+    out << "{" << std::endl;
+    increase_indent();
+}
+
+void Writer::end_namespace(std::ofstream& out)
+{
+    reset_indent();
+    out << "}" << std::endl << std::endl;
+}
+
+void Writer::decl_state_list(std::ofstream& out)
+{
+    out << get_indent() << "enum class " << Style::get_state_type() << std::endl;
+    out << get_indent() << "{" << std::endl;
+    increase_indent();
+
+    for (auto i = 0u; i < reader.getStateCount(); i++)
+    {
+        auto state = reader.getState(i);
         if (nullptr != state)
         {
             /* Only write down state on actual states that the machine may stay in. */
-            if (("initial" != state->name) && ("final" != state->name) && (!state->isChoice))
+            if (("initial" != state->name) && ("final" != state->name) && (!state->is_choice))
             {
-                out_h << getIndent(1) << styler.getStateNamePure(state) << "," << std::endl;
+                out << get_indent() << styler.get_state_name_pure(state) << "," << std::endl;
             }
         }
     }
-    out_h << getIndent(0) << "};" << std::endl << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "};" << std::endl << std::endl;
 }
 
-void Writer_t::decl_eventList()
+void Writer::decl_event_list(std::ofstream& out)
 {
-    const size_t nInEvents = reader.getInEventCount();
-    const size_t nOutEvents = reader.getOutEventCount();
-    const size_t nTimeEvents = reader.getTimeEventCount();
-    const size_t nInternalEvents = reader.getInternalEventCount();
+    const auto n_in_events       = reader.getInEventCount();
+    const auto n_out_events      = reader.getOutEventCount();
+    const auto n_time_events     = reader.getTimeEventCount();
+    const auto n_internal_events = reader.getInternalEventCount();
 
     // create an enum of all out-event names, out-events are on a separate queue since these are cleared by the user.
-    if (0 < nOutEvents)
+    if (0 < n_out_events)
     {
-        out_h << getIndent(0) << "enum class " << reader.getModelName() << "_OutEventId" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        for (std::size_t i = 0; i < nOutEvents; i++)
+        out << get_indent() << "enum class " << reader.get_model_name() << "_OutEventId" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        for (std::size_t i = 0; i < n_out_events; i++)
         {
             auto ev = reader.getOutEvent(i);
-            if (nullptr != ev)
+            if ((nullptr != ev) && ("null" != ev->name))
             {
-                out_h << getIndent(1) << ev->name << "," << std::endl;
+                out << get_indent() << ev->name << "," << std::endl;
             }
         }
-        out_h << getIndent(0) << "};" << std::endl << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
 
         // create a union of any event data possible.
         std::vector<std::pair<std::string, std::string>> paramData {};
-        for (std::size_t i = 0; i < nOutEvents; i++)
+        for (auto i = 0u; i < n_out_events; i++)
         {
             auto ev = reader.getOutEvent(i);
-            if ((nullptr != ev) && ev->requireParameter)
+            if ((nullptr != ev) && ev->require_parameter && ("null" != ev->name))
             {
-                paramData.emplace_back(ev->parameterType, ev->name);
+                paramData.emplace_back(ev->parameter_type, ev->name);
             }
         }
+
         if (!paramData.empty())
         {
-            out_h << getIndent(0) << "union " << reader.getModelName() << "_OutEventData" << std::endl;
-            out_h << getIndent(0) << "{" << std::endl;
+            out << get_indent() << "union " << reader.get_model_name() << "_OutEventData" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
             for (const auto& x : paramData)
             {
-                out_h << getIndent(1) << x.first << " " << x.second << ";" << std::endl;
+                out << get_indent() << x.first << " " << x.second << ";" << std::endl;
             }
-            out_h << getIndent(1) << reader.getModelName() << "_OutEventData() = default;" << std::endl; //: ";
-            out_h << getIndent(1) << "~" << reader.getModelName() << "_OutEventData() = default;" << std::endl;
-            out_h << getIndent(0) << "};" << std::endl << std::endl;
+            out << get_indent() << reader.get_model_name() << "_OutEventData() = default;" << std::endl;  //: ";
+            out << get_indent() << "~" << reader.get_model_name() << "_OutEventData() = default;" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "};" << std::endl << std::endl;
         }
 
         // create struct containing the in-event.
-        out_h << getIndent(0) << "struct " << reader.getModelName() << "_OutEvent" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        out_h << getIndent(1) << reader.getModelName() << "_OutEventId id;" << std::endl;
+        out << get_indent() << "struct " << reader.get_model_name() << "_OutEvent" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << reader.get_model_name() << "_OutEventId id;" << std::endl;
         if (!paramData.empty())
         {
-            out_h << getIndent(1) << reader.getModelName() << "_OutEventData parameter;" << std::endl;
+            out << get_indent() << reader.get_model_name() << "_OutEventData parameter;" << std::endl;
         }
-        out_h << getIndent(1) << reader.getModelName() << "_OutEvent() = default;" << std::endl;
-        out_h << getIndent(1) << "~" << reader.getModelName() << "_OutEvent() = default;" << std::endl;
-        out_h << "};" << std::endl << std::endl;
+        out << get_indent() << reader.get_model_name() << "_OutEvent() = default;" << std::endl;
+        out << get_indent() << "~" << reader.get_model_name() << "_OutEvent() = default;" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
     }
 
-    if (0 < nTimeEvents)
+    if (0 < n_time_events)
     {
-        out_h << getIndent(0) << "struct " << reader.getModelName() << "_TimeEvent" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        out_h << getIndent(1) << "bool isStarted;" << std::endl;
-        out_h << getIndent(1) << "bool isPeriodic;" << std::endl;
-        out_h << getIndent(1) << "size_t timeout_ms;" << std::endl;
-        out_h << getIndent(1) << "size_t expireTime_ms;" << std::endl;
-        out_h << getIndent(1) << reader.getModelName() << "_TimeEvent() = default;" << std::endl;
-        out_h << getIndent(1) << "~" << reader.getModelName() << "_TimeEvent() = default;" << std::endl;
-        out_h << getIndent(0) << "};" << std::endl << std::endl;
+        out << get_indent() << "struct TimeEvent" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
 
-        out_h << getIndent(0) << "struct " << reader.getModelName() << "_TimeEvents" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        for (std::size_t i = 0; i < nTimeEvents; i++)
+        out << get_indent() << "bool is_started {};" << std::endl;
+        out << get_indent() << "bool is_periodic {};" << std::endl;
+        out << get_indent() << "size_t timeout_ms {};" << std::endl;
+        out << get_indent() << "size_t expire_time_ms {};" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
+
+        out << get_indent() << "struct TimeEvents" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        for (auto i = 0u; i < n_time_events; i++)
         {
             auto ev = reader.getTimeEvent(i);
-            if (nullptr != ev)
+            if ((nullptr != ev) && ("null" != ev->name))
             {
-                out_h << getIndent(1) << reader.getModelName() << "_TimeEvent " << ev->name << ";" << std::endl;
+                out << get_indent() << "TimeEvent " << Style::get_event_name(ev) << " {};" << std::endl;
             }
         }
-        out_h << getIndent(0) << "};" << std::endl << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
     }
 
     // create an enum of all in-event names
-    if ((0 < nInEvents) || (0 < nTimeEvents) || (0 < nInternalEvents))
+    if ((0 < n_in_events) || (0 < n_time_events) || (0 < n_internal_events))
     {
-        out_h << getIndent(0) << "enum class " << reader.getModelName() << "_EventId" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        for (std::size_t i = 0; i < nInEvents; i++)
+        out << get_indent() << "enum class EventId" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        for (auto i = 0u; i < n_in_events; i++)
         {
             auto ev = reader.getInEvent(i);
-            if (nullptr != ev)
+            if ((nullptr != ev) && ("null" != ev->name))
             {
-                out_h << getIndent(1) << "in_" << ev->name << "," << std::endl;
+                out << get_indent() << "in_" << Style::get_event_name(ev) << "," << std::endl;
             }
         }
-        for (std::size_t i = 0; i < nTimeEvents; i++)
+        for (auto i = 0u; i < n_time_events; i++)
         {
             auto ev = reader.getTimeEvent(i);
-            if (nullptr != ev)
+            if ((nullptr != ev) && ("null" != ev->name))
             {
-                out_h << getIndent(1) << "time_" << ev->name << "," << std::endl;
+                out << get_indent() << "time_" << Style::get_event_name(ev) << "," << std::endl;
             }
         }
-        for (std::size_t i = 0; i < nInternalEvents; i++)
+        for (auto i = 0u; i < n_internal_events; i++)
         {
             auto ev = reader.getInternalEvent(i);
-            if (nullptr != ev)
+            if ((nullptr != ev) && ("null" != ev->name))
             {
-                out_h << getIndent(1) << "internal_" << ev->name << "," << std::endl;
+                out << get_indent() << "internal_" << Style::get_event_name(ev) << "," << std::endl;
             }
         }
-        out_h << getIndent(0) << "};" << std::endl << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
 
         // create a union of any event data possible.
         std::vector<std::pair<std::string, std::string>> paramData {};
-        for (std::size_t i = 0; i < nInEvents; i++)
+        for (auto i = 0u; i < n_in_events; i++)
         {
             auto ev = reader.getInEvent(i);
-            if ((nullptr != ev) && ev->requireParameter)
+            if ((nullptr != ev) && ev->require_parameter && ("null" != ev->name))
             {
-                paramData.emplace_back(ev->parameterType, "in_" + ev->name);
+                paramData.emplace_back(ev->parameter_type, "in_" + ev->name);
             }
         }
-        for (std::size_t i = 0; i < nInternalEvents; i++)
+        for (std::size_t i = 0; i < n_internal_events; i++)
         {
             auto ev = reader.getInternalEvent(i);
-            if ((nullptr != ev) && ev->requireParameter)
+            if ((nullptr != ev) && ev->require_parameter && ("null" != ev->name))
             {
-                paramData.emplace_back(ev->parameterType, "internal_" + ev->name);
+                paramData.emplace_back(ev->parameter_type, "internal_" + ev->name);
             }
         }
         if (!paramData.empty())
         {
-            out_h << getIndent(0) << "union " << reader.getModelName() << "_EventData" << std::endl;
-            out_h << getIndent(0) << "{" << std::endl;
+            out << get_indent() << "union EventData" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
             for (const auto& x : paramData)
             {
-                out_h << getIndent(1) << x.first << " " << x.second << ";" << std::endl;
+                out << get_indent() << x.first << " " << x.second << " {};" << std::endl;
             }
-            out_h << getIndent(1) << reader.getModelName() << "_EventData() = default;" << std::endl;
-            out_h << getIndent(1) << "~" << reader.getModelName() << "_EventData() = default;" << std::endl;
-            out_h << getIndent(0) << "};" << std::endl << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "};" << std::endl << std::endl;
         }
 
         // create struct containing the in-event.
-        out_h << getIndent(0) << "struct " << reader.getModelName() << "_Event" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
-        out_h << getIndent(1) << reader.getModelName() << "_EventId id;" << std::endl;
+        out << get_indent() << "struct Event" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "EventId id {};" << std::endl;
         if (!paramData.empty())
         {
-            out_h << getIndent(1) << reader.getModelName() << "_EventData parameter;" << std::endl;
+            out << get_indent() << "EventData parameter {};" << std::endl;
         }
-        out_h << getIndent(1) << reader.getModelName() << "_Event() = default;" << std::endl;
-        out_h << getIndent(1) << "~" << reader.getModelName() << "_Event() = default;" << std::endl;
-        out_h << "};" << std::endl << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
     }
 }
 
-void Writer_t::decl_variableList()
+void Writer::decl_variable_list(std::ofstream& out)
 {
-    const size_t nPrivate = reader.getPrivateVariableCount();
-    const size_t nPublic  = reader.getPublicVariableCount();
+    const auto n_private = reader.getPrivateVariableCount();
+    const auto n_public  = reader.getPublicVariableCount();
 
-    if ((0 == nPrivate) && (0 == nPublic))
+    if ((0 == n_private) && (0 == n_public))
     {
         // no variables!
     }
     else
     {
-        out_h << getIndent(0) << "struct " << reader.getModelName() << "_Variables" << std::endl;
-        out_h << getIndent(0) << "{" << std::endl;
+        out << get_indent() << "struct Variables" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
 
         // write private
-        if (0 < nPrivate)
+        if (0 < n_private)
         {
-            out_h << getIndent(1) << "struct " << reader.getModelName() << "_InternalVariables" << std::endl;
-            out_h << getIndent(1) << "{" << std::endl;
-            for (size_t i = 0; i < nPrivate; i++)
+            out << get_indent() << "struct InternalVariables" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
+            for (auto i = 0u; i < n_private; i++)
             {
-                Variable_t* var = reader.getPrivateVariable(i);
-                if ((nullptr != var) && (var->isPrivate))
+                auto var = reader.getPrivateVariable(i);
+                if ((nullptr != var) && (var->is_private))
                 {
-                    out_h << getIndent(2) << var->type << " " << var->name << ";" << std::endl;
+                    out << get_indent() << var->type << " " << Style::get_variable_name(var) << " {};" << std::endl;
                 }
             }
-            out_h << getIndent(2) << reader.getModelName() << "_InternalVariables() : ";
-            for (size_t i = 0; i < nPrivate; i++)
-            {
-                Variable_t* var = reader.getPrivateVariable(i);
-                if ((nullptr != var) && var->isPrivate)
-                {
-                    out_h << var->name << "()";
-                    if (i < (nPrivate - 1))
-                    {
-                        out_h << ", ";
-                    }
-                }
-            }
-            out_h << " {}" << std::endl;
-            out_h << getIndent(2) << "~" << reader.getModelName() << "_InternalVariables() = default;" << std::endl;
-            out_h << getIndent(1) << "} internal;" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "} internal {};" << std::endl;
         }
 
         // write public
-        if (0 < nPublic)
+        if (0 < n_public)
         {
-            out_h << getIndent(1) << "struct " << reader.getModelName() << "_ExportedVariables" << std::endl;
-            out_h << getIndent(1) << "{" << std::endl;
-            for (size_t i = 0; i < nPublic; i++)
+            out << get_indent() << "struct ExportedVariables" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
+            for (size_t i = 0; i < n_public; i++)
             {
-                Variable_t* var = reader.getPublicVariable(i);
-                if ((nullptr != var) && !var->isPrivate)
+                auto var = reader.getPublicVariable(i);
+                if ((nullptr != var) && !var->is_private)
                 {
-                    out_h << getIndent(2) << var->type << " " << var->name << ";" << std::endl;
+                    out << get_indent() << var->type << " " << Style::get_variable_name(var) << " {};" << std::endl;
                 }
             }
-            out_h << getIndent(2) << reader.getModelName() << "_ExportedVariables() : ";
-            for (size_t i = 0; i < nPublic; i++)
-            {
-                Variable_t* var = reader.getPublicVariable(i);
-                if ((nullptr != var) && !var->isPrivate)
-                {
-                    out_h << var->name << "()";
-                    if (i < (nPublic - 1))
-                    {
-                        out_h << ", ";
-                    }
-                }
-            }
-            out_h << " {}" << std::endl;
-            out_h << getIndent(2) << "~" << reader.getModelName() << "_ExportedVariables() = default;" << std::endl;
-            out_h << getIndent(1) << "} exported;" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "} exported {};" << std::endl;
         }
-        out_h << getIndent(1) << reader.getModelName() << "_Variables() : ";
-        bool written = false;
-        if (0 < nPrivate)
-        {
-            out_h << "internal()";
-            written = true;
-        }
-        if (0 < nPublic)
-        {
-            if (written)
-            {
-                out_h << ", ";
-            }
-            out_h << "exported()";
-            written = true;
-        }
-        out_h << " {}" << std::endl;
-        out_h << getIndent(1) << "~" << reader.getModelName() << "_Variables() = default;" << std::endl;
-        out_h << getIndent(0) << "};" << std::endl << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "};" << std::endl << std::endl;
     }
 }
 
-void Writer_t::decl_tracingCallback()
+void Writer::decl_tracing_callback(std::ofstream& out)
 {
-    out_h << getIndent(0) << "using TraceEntry_t = std::function<void(" << styler.getStateType() << " state)>;" << std::endl;
-    out_h << getIndent(0) << "using TraceExit_t = std::function<void(" << styler.getStateType() << " state)>;" << std::endl << std::endl;
+    if (config.do_tracing)
+    {
+        out << get_indent() << "using TraceEntry_t = std::function<void(" << Style::get_state_type() << " state)>;"
+            << std::endl;
+        out << get_indent() << "using TraceExit_t = std::function<void(" << Style::get_state_type() << " state)>;"
+            << std::endl
+            << std::endl;
+    }
 }
 
-void Writer_t::decl_stateMachine()
+void Writer::decl_state_machine(std::ofstream& out)
 {
     // write internal structure
-    out_h << "///\\brief State machine base class for " << reader.getModelName() << "." << std::endl;
-    out_h << getIndent(0) << "class " << reader.getModelName() << std::endl;
-    out_h << getIndent(0) << "{" << std::endl;
-    out_h << getIndent(0) << "private:" << std::endl;
-    out_h << getIndent(1) << reader.getModelName() << "_State state;" << std::endl;
+    out << "///\\brief State machine base class for " << reader.get_model_name() << "." << std::endl;
+    out << get_indent() << "class " << reader.get_model_name() << std::endl;
+    out << get_indent() << "{" << std::endl;
+    out << get_indent() << "private:" << std::endl;
+    increase_indent();
+
+    out << get_indent() << Style::get_state_type() << " state;" << std::endl;
     if (0 < reader.getTimeEventCount())
     {
-        out_h << getIndent(1) << reader.getModelName() << "_TimeEvents time_events;" << std::endl;
+        out << get_indent() << "TimeEvents time_events;" << std::endl;
     }
     if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
     {
-        out_h << getIndent(1) << "std::deque<" << reader.getModelName() << "_Event> event_queue;" << std::endl;
+        out << get_indent() << "std::deque<Event> event_queue;" << std::endl;
     }
     if (0 < reader.getOutEventCount())
     {
-        out_h << getIndent(1) << "std::deque<" << reader.getModelName() << "_OutEvent> out_event_queue;" << std::endl;
+        out << get_indent() << "std::deque<OutEvent> out_event_queue;" << std::endl;
     }
-    if (0 < reader.getVariableCount())
+    if (0 < reader.get_variable_count())
     {
-        out_h << getIndent(1) << reader.getModelName() << "_Variables variables;" << std::endl;
+        out << get_indent() << "Variables variables;" << std::endl;
     }
-    if (config.doTracing)
+    if (config.do_tracing)
     {
-        out_h << getIndent(1) << "TraceEntry_t trace_enter_function;" << std::endl;
-        out_h << getIndent(1) << "TraceExit_t trace_exit_function;" << std::endl;
+        out << get_indent() << "TraceEntry_t trace_enter_function;" << std::endl;
+        out << get_indent() << "TraceExit_t trace_exit_function;" << std::endl;
     }
     if (0 < reader.getTimeEventCount())
     {
         // time now counter
-        out_h << getIndent(1) << "size_t time_now_ms;" << std::endl;
+        out << get_indent() << "size_t time_now_ms;" << std::endl;
     }
-    out_h << getIndent(1) << "void " << styler.getTopRunCycle() << "();" << std::endl;
-    if (config.doTracing)
+    out << get_indent() << "Event active_event;" << std::endl;
+    out << get_indent() << "void " << Style::get_top_run_cycle() << "();" << std::endl;
+    if (config.do_tracing)
     {
-        out_h << getIndent(1) << "void " << styler.getTraceEntry() << "(" << styler.getStateType() << " state);" << std::endl;
-        out_h << getIndent(1) << "void " << styler.getTraceExit() << "(" << styler.getStateType() << " state);" << std::endl;
+        out << get_indent() << "void " << Style::get_trace_entry() << "(" << Style::get_state_type() << " state);"
+            << std::endl;
+        out << get_indent() << "void " << Style::get_trace_exit() << "(" << Style::get_state_type() << " state);"
+            << std::endl;
     }
-    for (size_t i = 0; i < reader.getInternalEventCount(); i++)
+    for (auto i = 0u; i < reader.getInternalEventCount(); i++)
     {
-        Event_t* ev = reader.getInternalEvent(i);
-        out_h << getIndent(1) << "void " << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
+        auto ev = reader.getInternalEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_h << ev->parameterType << " value";
-        }
-        out_h << ");" << std::endl;
-    }
-    for (size_t i = 0; i < reader.getOutEventCount(); i++)
-    {
-        Event_t* ev = reader.getOutEvent(i);
-        out_h << getIndent(1) << "void " << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
-        {
-            out_h << ev->parameterType << " value";
-        }
-        out_h << ");" << std::endl;
-    }
-    for (size_t i = 0; i < reader.getStateCount(); i++)
-    {
-        State_t* state = reader.getState(i);
-        if (("initial" != state->name) && hasEntryStatement(state->id))
-        {
-            out_h << getIndent(1) << "void " << styler.getStateEntry(state) << "();" << std::endl;
+            out << get_indent() << "void " << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ");" << std::endl;
         }
     }
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getOutEventCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (("initial" != state->name) && hasExitStatement(state->id))
+        auto ev = reader.getOutEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_h << getIndent(1) << "void " << styler.getStateExit(state) << "();" << std::endl;
+            out << get_indent() << "void " << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ");" << std::endl;
         }
     }
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (("initial" == state->name) || ("final" == state->name))
+        auto state = reader.getState(i);
+        if ((nullptr != state) && ("initial" != state->name) && has_entry_statement(state->id))
         {
-            // no run cycle for initial or final states.
+            out << get_indent() << "void " << styler.get_state_entry(state) << "();" << std::endl;
         }
-        else if (state->isChoice)
+    }
+    for (auto i = 0u; i < reader.getStateCount(); i++)
+    {
+        auto state = reader.getState(i);
+        if ((nullptr != state) && ("initial" != state->name) && has_exit_statement(state->id))
         {
-            // no run cycle for choices.
+            out << get_indent() << "void " << styler.get_state_exit(state) << "();" << std::endl;
+        }
+    }
+    for (auto i = 0u; i < reader.getStateCount(); i++)
+    {
+        auto state = reader.getState(i);
+        if ((nullptr != state) && ("initial" == state->name) || ("final" == state->name) || state->is_choice)
+        {
+            // no run cycle for initial, final or choice states.
         }
         else
         {
-            out_h << getIndent(1) << "bool " << styler.getStateRunCycle(state) << "(const " << reader.getModelName() << "_Event& event, bool try_transition);" << std::endl;
+            out << get_indent() << "bool " << styler.get_state_run_cycle(state)
+                << "(const Event& event, bool try_transition);" << std::endl;
         }
     }
-    out_h << std::endl;
-    out_h << getIndent(0) << "public:" << std::endl;
-    out_h << getIndent(1) << reader.getModelName() << "() : ";
-    out_h << "state()";
+    out << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "public:" << std::endl;
+    increase_indent();
+
+    out << get_indent() << reader.get_model_name() << "() : ";
+    out << "state()";
     if (0 < reader.getTimeEventCount())
     {
-        out_h << ", time_events()";
+        out << ", time_events()";
     }
     if ((0 < reader.getInEventCount()) || (0 < reader.getTimeEventCount()) || (0 < reader.getInternalEventCount()))
     {
-        out_h << ", event_queue()";
+        out << ", event_queue()";
     }
     if (0 < reader.getOutEventCount())
     {
-        out_h << ", out_event_queue()";
+        out << ", out_event_queue()";
     }
-    if (0 < reader.getVariableCount())
+    if (0 < reader.get_variable_count())
     {
-        out_h << ", variables()";
+        out << ", variables()";
     }
     if (0 < reader.getTimeEventCount())
     {
-        out_h << ", time_now_ms()";
+        out << ", time_now_ms()";
     }
-    out_h << " {}" << std::endl;
-    out_h << getIndent(1) << "~" << reader.getModelName() << "() = default;" << std::endl;
+    out << " {}" << std::endl;
+    out << get_indent() << "~" << reader.get_model_name() << "() = default;" << std::endl;
     // add all prototypes.
-    if (config.doTracing)
+    if (config.do_tracing)
     {
-        out_h << getIndent(1) << "void set_trace_enter_callback(const TraceEntry_t& enter_cb);" << std::endl;
-        out_h << getIndent(1) << "void set_trace_exit_callback(const TraceExit_t& exit_cb);" << std::endl;
-        out_h << getIndent(1) << "static std::string get_state_name(" << styler.getStateType() << " s);" << std::endl;
-        out_h << getIndent(1) << "[[nodiscard]] " << styler.getStateType() << " get_state() const;" << std::endl;
+        out << get_indent() << "void set_trace_enter_callback(const TraceEntry_t& enter_cb);" << std::endl;
+        out << get_indent() << "void set_trace_exit_callback(const TraceExit_t& exit_cb);" << std::endl;
+        out << get_indent() << "static std::string get_state_name(" << Style::get_state_type() << " s);" << std::endl;
+        out << get_indent() << "[[nodiscard]] " << Style::get_state_type() << " get_state() const;" << std::endl;
     }
-    out_h << getIndent(1) << "void init();" << std::endl;
+    out << get_indent() << "void init();" << std::endl;
     if (0 < reader.getTimeEventCount())
     {
-        out_h << getIndent(1) << "void " << styler.getTimeTick() << "(" << "size_t time_elapsed_ms);" << std::endl;
+        out << get_indent() << "void " << Style::get_time_tick() << "(" << "size_t time_elapsed_ms);" << std::endl;
     }
-    for (size_t i = 0; i < reader.getInEventCount(); i++)
+    for (auto i = 0u; i < reader.getInEventCount(); i++)
     {
-        Event_t* ev = reader.getInEvent(i);
-        out_h << getIndent(1) << "void " << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
+        auto ev = reader.getInEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_h << ev->parameterType << " value";
+            out << get_indent() << "void " << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ");" << std::endl;
         }
-        out_h << ");" << std::endl;
     }
     if (0 < reader.getOutEventCount())
     {
-        out_h << getIndent(1) << "bool is_out_event_raised(" << reader.getModelName() << "_OutEvent& ev);" << std::endl;
+        out << get_indent() << "bool is_out_event_raised(" << reader.get_model_name() << "_OutEvent& ev);" << std::endl;
     }
-#if 0
-    for (size_t i = 0; i < reader.getOutEventCount(); i++)
+    for (auto i = 0u; i < reader.get_variable_count(); i++)
     {
-        Event_t* ev = reader.getOutEvent(i);
-        out_h << getIndent(1) << "[[nodiscard]] bool " << styler.getEventIsRaised(ev) << "() const;" << std::endl;
-        if (ev->requireParameter)
-        {
-            out_h << getIndent(1) << "[[nodiscard]] " << ev->parameterType << " " << styler.getEventValue(ev) << "() const;" << std::endl;
-        }
-    }
-#endif
-    for (size_t i = 0; i < reader.getVariableCount(); i++)
-    {
-        Variable_t* var = reader.getPublicVariable(i);
+        auto var = reader.getPublicVariable(i);
         if (nullptr != var)
         {
-            out_h << getIndent(1) << "[[nodiscard]] " << var->type << " " << styler.getVariable(var) << "() const;" << std::endl;
+            out << get_indent() << "[[nodiscard]] " << var->type << " get_" << Style::get_variable_name(var)
+                << "() const;" << std::endl;
         }
     }
-    out_h << getIndent(0) << "};" << std::endl << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "};" << std::endl << std::endl;
 }
 
-void Writer_t::impl_init(const std::vector<State_t*>& firstState)
+void Writer::impl_init(std::ofstream& out, const std::vector<State*>& first_state)
 {
-    out_c << "void " << reader.getModelName() << "::init()" << std::endl;
-    out_c << "{" << std::endl;
+    out << get_indent() << "void " << reader.get_model_name() << "::init()" << std::endl;
+    out << get_indent() << "{" << std::endl;
+    increase_indent();
 
     // write variable inits
-    out_c << getIndent(1) << "// Initialise variables." << std::endl;
+    out << get_indent() << "// Initialise variables." << std::endl;
     bool any_specific_inited = false;
-    for (size_t i = 0; i < reader.getVariableCount(); i++)
+    for (auto i = 0u; i < reader.get_variable_count(); i++)
     {
-        Variable_t* var = reader.getVariable(i);
-        if (var->specificInitialValue)
+        auto var = reader.get_variable(i);
+        if (var->specific_initial_value)
         {
-            if (var->isPrivate)
+            if (var->is_private)
             {
-                out_c << getIndent(1) << "variables.internal.";
-            } else
-            {
-                out_c << getIndent(1) << "variables.exported.";
+                out << get_indent() << "variables.internal.";
             }
-            out_c << var->name << " = " << var->initialValue << ";" << std::endl;
+            else
+            {
+                out << get_indent() << "variables.exported.";
+            }
+            out << Style::get_variable_name(var) << " = " << var->initial_value << ";" << std::endl;
             any_specific_inited = true;
         }
     }
     if (!any_specific_inited)
     {
-        out_c << getIndent(1) << "// No variables with specific values defined, all initialised to 0." << std::endl;
+        out << get_indent() << "// No variables with specific values defined, all initialised to 0." << std::endl;
     }
-    out_c << std::endl;
+    out << std::endl;
 
     // enter first state
-    if (!firstState.empty())
+    if (!first_state.empty())
     {
-        out_c << getIndent(1) << "// Set initial state." << std::endl;
-        State_t* targetState = nullptr;
-        for (size_t i = 0; i < firstState.size(); i++)
+        out << get_indent() << "// Set initial state." << std::endl;
+        State* targetState = nullptr;
+        for (auto i : first_state)
         {
-            targetState = firstState[i];
-            if (hasEntryStatement(targetState->id))
+            targetState = i;
+            if (has_entry_statement(targetState->id))
             {
                 // write entry call
-                out_c << getIndent(1) << styler.getStateEntry(targetState) << "();" << std::endl;
+                out << get_indent() << styler.get_state_entry(targetState) << "();" << std::endl;
             }
         }
-        out_c << getIndent(1) << "state = " << styler.getStateName(targetState) << ";" << std::endl;
-        if (config.doTracing)
+        out << get_indent() << "state = " << styler.get_state_name(targetState) << ";" << std::endl;
+        if (config.do_tracing)
         {
-            out_c << getIndent(1) << getTraceCall_entry(targetState) << std::endl;
+            out << get_indent() << get_trace_call_entry(targetState) << std::endl;
         }
     }
-    out_c << "}" << std::endl << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "}" << std::endl << std::endl;
 }
 
-void Writer_t::impl_raiseInEvent()
+void Writer::impl_raise_in_event(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getInEventCount(); i++)
+    for (auto i = 0u; i < reader.getInEventCount(); i++)
     {
-        Event_t* ev = reader.getInEvent(i);
-        out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
+        auto ev = reader.getInEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_c << ev->parameterType << " value";
-        }
-        out_c << ")" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << reader.getModelName() << "_Event event {};" << std::endl;
-        out_c << getIndent(1) << "event.id = " << reader.getModelName() << "_EventId::in_" << ev->name << ";" << std::endl;
+            out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ")" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
 
-        if (ev->requireParameter)
-        {
-            out_c << getIndent(1) << "event.parameter.in_" << ev->name << " = value;" << std::endl;
+            out << get_indent() << "Event event {};" << std::endl;
+            out << get_indent() << "event.id = " << "EventId::in_" << Style::get_event_name(ev) << ";" << std::endl;
+
+            if (ev->require_parameter)
+            {
+                out << get_indent() << "event.parameter.in_" << Style::get_event_name(ev) << " = value;" << std::endl;
+            }
+
+            out << get_indent() << "event_queue.push_back(event);" << std::endl;
+            out << get_indent() << Style::get_top_run_cycle() << "();" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "}" << std::endl << std::endl;
         }
-        out_c << getIndent(1) << "event_queue.push_back(event);" << std::endl;
-        out_c << getIndent(1) << styler.getTopRunCycle() << "();" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
     }
 }
 
-void Writer_t::impl_raiseOutEvent()
+void Writer::impl_raise_out_event(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getOutEventCount(); i++)
+    for (auto i = 0u; i < reader.getOutEventCount(); i++)
     {
-        Event_t* ev = reader.getOutEvent(i);
-        out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
+        auto ev = reader.getOutEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_c << ev->parameterType << " value";
+            out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ")" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
+            out << get_indent() << "OutEvent event {};" << std::endl;
+            out << get_indent() << "event.id = OutEventId::" << Style::get_event_name(ev) << ";" << std::endl;
+
+            if (ev->require_parameter)
+            {
+                out << get_indent() << "event.parameter." << Style::get_event_name(ev) << " = value;" << std::endl;
+            }
+
+            out << get_indent() << "out_event_queue.push_back(event);" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "}" << std::endl << std::endl;
         }
-        out_c << ")" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << reader.getModelName() << "_OutEvent event {};" << std::endl;
-        out_c << getIndent(1) << "event.id = " << reader.getModelName() << "_OutEventId::" << ev->name << ";" << std::endl;
-        if (ev->requireParameter)
-        {
-            out_c << getIndent(1) << "event.parameter." << ev->name << " = value;" << std::endl;
-        }
-        out_c << getIndent(1) << "out_event_queue.push_back(event);" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
     }
 }
 
-void Writer_t::impl_raiseInternalEvent()
+void Writer::impl_raise_internal_event(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getInternalEventCount(); i++)
+    for (auto i = 0u; i < reader.getInternalEventCount(); i++)
     {
-        Event_t* ev = reader.getInternalEvent(i);
-        out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getEventRaise(ev) << "(";
-        if (ev->requireParameter)
+        auto ev = reader.getInternalEvent(i);
+        if ((nullptr != ev) && ("null" != ev->name))
         {
-            out_c << ev->parameterType << " value";
+            out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_event_raise(ev) << "(";
+            if (ev->require_parameter)
+            {
+                out << ev->parameter_type << " value";
+            }
+            out << ")" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
+            out << get_indent() << "Event event {};" << std::endl;
+            out << get_indent() << "event.id = EventId::internal_" << Style::get_event_name(ev) << ";" << std::endl;
+
+            if (ev->require_parameter)
+            {
+                out << get_indent() << "event.parameter.internal_" << Style::get_event_name(ev) << " = value;"
+                    << std::endl;
+            }
+            out << get_indent() << "event_queue.push_back(event);" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "}" << std::endl << std::endl;
         }
-        out_c << ")" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << reader.getModelName() << "_Event event {};" << std::endl;
-        out_c << getIndent(1) << "event.id = " << reader.getModelName() << "_EventId::internal_" << ev->name << ";" << std::endl;
-        if (ev->requireParameter)
-        {
-            out_c << getIndent(1) << "event.parameter.internal_" << ev->name << " = value;" << std::endl;
-        }
-        out_c << getIndent(1) << "event_queue.push_back(event);" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
     }
 }
 
-void Writer_t::impl_checkOutEvent()
+void Writer::impl_check_out_event(std::ofstream& out)
 {
     if (0 < reader.getOutEventCount())
     {
-        out_c << getIndent(0) << "bool " << reader.getModelName() << "::is_out_event_raised(" << reader.getModelName() << "_OutEvent& ev)" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << "bool pending = false;" << std::endl;
-        out_c << getIndent(1) << "if (!out_event_queue.empty())" << std::endl;
-        out_c << getIndent(1) << "{" << std::endl;
-        out_c << getIndent(2) << "ev = out_event_queue.front();" << std::endl;
-        out_c << getIndent(2) << "out_event_queue.pop_front();" << std::endl;
-        out_c << getIndent(2) << "pending = true;" << std::endl;
-        out_c << getIndent(1) << "}" << std::endl;
-        out_c << getIndent(1) << "return pending;" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
+        out << get_indent() << "bool " << reader.get_model_name() << "::is_out_event_raised(" << reader.get_model_name()
+            << "_OutEvent& ev)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "bool pending = false;" << std::endl;
+        out << get_indent() << "if (!out_event_queue.empty())" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "ev = out_event_queue.front();" << std::endl;
+        out << get_indent() << "out_event_queue.pop_front();" << std::endl;
+        out << get_indent() << "pending = true;" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl;
+        out << get_indent() << "return pending;" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
     }
-#if 0
-    for (size_t i = 0; i < reader.getOutEventCount(); i++)
-    {
-        Event_t* ev = reader.getOutEvent(i);
-        out_c << "bool " << reader.getModelName() << "::" << styler.getEventIsRaised(ev) << "() const" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "return events.outEvents." << ev->name << "_isRaised;" << std::endl;
-        out_c << "}" << std::endl << std::endl;
-    }
-#endif
 }
 
-void Writer_t::impl_getVariable()
+void Writer::impl_get_variable(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getVariableCount(); i++)
+    for (auto i = 0u; i < reader.get_variable_count(); i++)
     {
-        Variable_t* var = reader.getPublicVariable(i);
+        auto var = reader.getPublicVariable(i);
         if (nullptr != var)
         {
-            out_c << var->type << " " << reader.getModelName() << "::" << styler.getVariable(var) << "() const" << std::endl;
-            out_c << "{" << std::endl;
-            out_c << getIndent(1) << "return variables.exported." << var->name << ";" << std::endl;
-            out_c << "}" << std::endl << std::endl;
+            out << get_indent() << var->type << " " << reader.get_model_name() << "::get_"
+                << Style::get_variable_name(var) << "() const" << std::endl;
+            out << "{" << std::endl;
+            increase_indent();
+
+            out << get_indent() << "return variables.exported." << Style::get_variable_name(var) << ";" << std::endl;
+            decrease_indent();
+
+            out << "}" << std::endl << std::endl;
         }
     }
 }
 
-void Writer_t::impl_timeTick()
+void Writer::impl_time_tick(std::ofstream& out)
 {
     if (0 < reader.getTimeEventCount())
     {
-        out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getTimeTick() << "(size_t time_elapsed_ms)" << std::endl;
-        out_c << getIndent(0) << "{" << std::endl;
-        out_c << getIndent(1) << "time_now_ms += time_elapsed_ms;" << std::endl << std::endl;
-        for (size_t i = 0; i < reader.getTimeEventCount(); i++)
+        out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_time_tick()
+            << "(size_t time_elapsed_ms)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "time_now_ms += time_elapsed_ms;" << std::endl << std::endl;
+        for (auto i = 0u; i < reader.getTimeEventCount(); i++)
         {
-            Event_t* ev = reader.getTimeEvent(i);
+            auto ev = reader.getTimeEvent(i);
             if (nullptr != ev)
             {
-                out_c << getIndent(1) << "if (time_events." << ev->name << ".isStarted)" << std::endl;
-                out_c << getIndent(1) << "{" << std::endl;
-                out_c << getIndent(2) << "if (time_events." << ev->name << ".expireTime_ms <= time_now_ms)" << std::endl;
-                out_c << getIndent(2) << "{" << std::endl;
-                out_c << getIndent(3) << "// Time events does not carry any parameter." << std::endl;
-                out_c << getIndent(3) << reader.getModelName() << "_Event event {};" << std::endl;
-                out_c << getIndent(3) << "event.id = " << reader.getModelName() << "_EventId::time_" << ev->name << ";" << std::endl;
-                out_c << getIndent(3) << "event_queue.push_back(event);" << std::endl << std::endl;
-                //out_c << getIndent(3) << "time_events." << ev->name << ".isRaised = true;" << std::endl;
-                out_c << getIndent(3) << "// Check for automatic reload." << std::endl;
-                out_c << getIndent(3) << "if (time_events." << ev->name << ".isPeriodic)" << std::endl;
-                out_c << getIndent(3) << "{" << std::endl;
-                out_c << getIndent(4) << "time_events." << ev->name << ".expireTime_ms += time_events." << ev->name << ".timeout_ms;" << std::endl;
-                out_c << getIndent(4) << "time_events." << ev->name << ".isStarted = true;" << std::endl;
-                out_c << getIndent(3) << "}" << std::endl;
-                out_c << getIndent(3) << "else" << std::endl;
-                out_c << getIndent(3) << "{" << std::endl;
-                out_c << getIndent(4) << "time_events." << ev->name << ".isStarted = false;" << std::endl;
-                out_c << getIndent(3) << "}" << std::endl;
-                out_c << getIndent(2) << "}" << std::endl;
-                out_c << getIndent(1) << "}" << std::endl;
+                out << get_indent() << "if (time_events." << Style::get_event_name(ev) << ".is_started)" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "if (time_events." << Style::get_event_name(ev)
+                    << ".expire_time_ms <= time_now_ms)" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "// Time events does not carry any parameter." << std::endl;
+                out << get_indent() << "Event event {};" << std::endl;
+                out << get_indent() << "event.id = " << "EventId::time_" << Style::get_event_name(ev) << ";"
+                    << std::endl;
+                out << get_indent() << "event_queue.push_back(event);" << std::endl << std::endl;
+
+                out << get_indent() << "// Check for automatic reload." << std::endl;
+                out << get_indent() << "if (time_events." << Style::get_event_name(ev) << ".is_periodic)" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "time_events." << Style::get_event_name(ev) << ".expire_time_ms += time_events."
+                    << Style::get_event_name(ev) << ".timeout_ms;" << std::endl;
+                out << get_indent() << "time_events." << Style::get_event_name(ev) << ".is_started = true;"
+                    << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
+                out << get_indent() << "else" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "time_events." << Style::get_event_name(ev) << ".is_started = false;"
+                    << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
             }
         }
-        out_c << getIndent(1) << styler.getTopRunCycle() << "();" << std::endl;
-        out_c << getIndent(0) << "}" << std::endl << std::endl;
+        out << get_indent() << Style::get_top_run_cycle() << "();" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
     }
 }
 
-void Writer_t::impl_clearEvents()
-{
-#if 0
-    if (0 < reader.getInEventCount())
-    {
-        out_c << "void " << reader.getModelName() << "::clear_in_events()" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "events.inEvents = {};" << std::endl;
-        out_c << "}" << std::endl << std::endl;
-    }
-
-    if (0 < reader.getInternalEventCount())
-    {
-        out_c << "void " << reader.getModelName() << "::clear_internal_events()" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "events.internalEvents = {};" << std::endl;
-        out_c << "}" << std::endl << std::endl;
-    }
-
-    if (0 < reader.getTimeEventCount())
-    {
-        out_c << "void " << reader.getModelName() << "::clear_time_events()" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "events.timeEvents = {};" << std::endl;
-        out_c << "}" << std::endl << std::endl;
-    }
-
-    if (0 < reader.getOutEventCount())
-    {
-        out_c << "void " << reader.getModelName() << "::clear_out_events()" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "events.outEvents = {};" << std::endl;
-        out_c << "}" << std::endl << std::endl;
-    }
-#endif
-}
-
-void Writer_t::impl_checkAnyEventRaised()
-{
-#if 0
-    if (0 < reader.getInternalEventCount())
-    {
-        out_c << "bool " << reader.getModelName() << "::is_internal_event_raised()" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "bool any_raised = false;" << std::endl;
-        for (std::size_t i = 0; i < reader.getInternalEventCount(); i++)
-        {
-            auto ev = reader.getInternalEvent(i);
-            if (nullptr != ev)
-            {
-                out_c << getIndent(1) << "any_raised |= events.internalEvents." << ev->name << "_isRaised;" << std::endl;
-            }
-        }
-        out_c << getIndent(1) << "return any_raised;" << std::endl;
-        out_c << "}" << std::endl;
-    }
-#endif
-}
-
-void Writer_t::impl_topRunCycle()
+void Writer::impl_top_run_cycle(std::ofstream& out)
 {
     size_t writeNumber = 0;
-    size_t indent = 0;
-    out_c << "void " << reader.getModelName() << "::" << styler.getTopRunCycle() << "()" << std::endl;
-    out_c << "{" << std::endl;
-    indent++;
+    out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_top_run_cycle() << "()"
+        << std::endl;
+    out << get_indent() << "{" << std::endl;
+    increase_indent();
 
-#if 0
-    if (0 < reader.getOutEventCount())
+    out << get_indent() << "// Handle all queued events." << std::endl;
+    out << get_indent() << "while (!event_queue.empty())" << std::endl;
+    out << get_indent() << "{" << std::endl;
+    increase_indent();
+
+    out << get_indent() << "active_event = event_queue.front();" << std::endl;
+    out << get_indent() << "event_queue.pop_front();" << std::endl << std::endl;
+    out << get_indent() << "switch (state)" << std::endl;
+    out << get_indent() << "{" << std::endl;
+    increase_indent();
+
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        out_c << getIndent(indent) << "clear_out_events();" << std::endl << std::endl;
-    }
-#endif
-
-    out_c << getIndent(indent) << "// Handle all queued events." << std::endl;
-    out_c << getIndent(indent) << "while (!event_queue.empty())" << std::endl;
-    out_c << getIndent(indent) << "{" << std::endl;
-    indent++;
-
-    out_c << getIndent(indent) << "auto event = event_queue.front();" << std::endl;
-    out_c << getIndent(indent) << "event_queue.pop_front();" << std::endl << std::endl;
-
-    out_c << getIndent(indent) << "switch (state)" << std::endl;
-    out_c << getIndent(indent) << "{" << std::endl;
-    indent++;
-    for (size_t i = 0; i < reader.getStateCount(); i++)
-    {
-        State_t* state = reader.getState(i);
-        if (("initial" == state->name) || ("final" == state->name))
+        auto state = reader.getState(i);
+        if (("initial" == state->name) || ("final" == state->name) || state->is_choice)
         {
-            // no handling on initial or final states.
-        }
-        else if (state->isChoice)
-        {
-            // no handling on choice.
+            // no handling on initial or final states, or choice.
         }
         else
         {
-            out_c << getIndent(indent) << "case " << styler.getStateName(state) << ":" << std::endl;
-            indent++;
-            out_c << getIndent(indent) << styler.getStateRunCycle(state) << "(event, true);" << std::endl;
-            out_c << getIndent(indent) << "break;" << std::endl << std::endl;
-            indent--;
-#if 0
-            out_c << getIndent(indent) << getIfElseIf(writeNumber) << " (" << styler.getStateName(state) << " == state)" << std::endl;
-            out_c << getIndent(indent) << "{" << std::endl;
-            indent++;
-            out_c << getIndent(indent) << styler.getStateRunCycle(state) << "(true);" << std::endl;
-            indent--;
-            out_c << getIndent(indent) << "}" << std::endl;
-            writeNumber++;
-#endif
+            out << get_indent() << "case " << styler.get_state_name(state) << ":" << std::endl;
+            increase_indent();
+
+            out << get_indent() << styler.get_state_run_cycle(state) << "(active_event, true);" << std::endl;
+            out << get_indent() << "break;" << std::endl << std::endl;
+            decrease_indent();
         }
     }
     if (0 < reader.getStateCount())
     {
-        out_c << getIndent(indent) << "default:" << std::endl;
-        indent++;
-        out_c << getIndent(indent) << "// Invalid, or final state." << std::endl;
-        out_c << getIndent(indent) << "break;" << std::endl;
-        indent--;
-#if 0
-        out_c << getIndent(indent) << "else" << std::endl;
-        out_c << getIndent(indent) << "{" << std::endl;
-        indent++;
-        out_c << getIndent(indent) << "// possibly final state!" << std::endl;
-        indent--;
-        out_c << getIndent(indent) << "}" << std::endl;
-#endif
-    }
-    indent--;
-    out_c << getIndent(indent) << "}" << std::endl;
-    indent--;
-    out_c << getIndent(indent) << "}" << std::endl;
+        out << get_indent() << "default:" << std::endl;
+        increase_indent();
 
-#if 0
-    if (0 < reader.getInEventCount())
-    {
-        out_c << getIndent(indent) << "clear_in_events();" << std::endl;
+        out << get_indent() << "// Invalid, or final state." << std::endl;
+        out << get_indent() << "break;" << std::endl;
+        decrease_indent();
     }
-    if (0 < reader.getTimeEventCount())
-    {
-        out_c << getIndent(indent) << "clear_time_events();" << std::endl;
-    }
-    if (0 < reader.getInternalEventCount())
-    {
-        out_c << getIndent(indent) << "clear_internal_events();" << std::endl;
-    }
-#endif
-    out_c << "}" << std::endl << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "}" << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "}" << std::endl;
+    decrease_indent();
+
+    out << get_indent() << "}" << std::endl << std::endl;
 }
 
-void Writer_t::impl_traceCalls()
+void Writer::impl_trace_calls(std::ofstream& out)
 {
-    if (config.doTracing)
+    if (config.do_tracing)
     {
-        out_c << "void " << reader.getModelName() << "::" << styler.getTraceEntry() << "(" << styler.getStateType() << " entered_state)" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "if (nullptr != trace_enter_function)" << std::endl;
-        out_c << getIndent(1) << "{" << std::endl;
-        out_c << getIndent(2) << "trace_enter_function(entered_state);" << std::endl;
-        out_c << getIndent(1) << "}" << std::endl;
-        out_c << "}" << std::endl << std::endl;
+        out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_trace_entry() << "("
+            << Style::get_state_type() << " entered_state)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
 
-        out_c << "void " << reader.getModelName() << "::" << styler.getTraceExit() << "(" << styler.getStateType() << " exited_state)" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "if (nullptr != trace_exit_function)" << std::endl;
-        out_c << getIndent(1) << "{" << std::endl;
-        out_c << getIndent(2) << "trace_exit_function(exited_state);" << std::endl;
-        out_c << getIndent(1) << "}" << std::endl;
-        out_c << "}" << std::endl << std::endl;
+        out << get_indent() << "if (nullptr != trace_enter_function)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
 
-        out_c << "void " << reader.getModelName() << "::set_trace_enter_callback(const TraceEntry_t& enter_cb)" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "trace_enter_function = enter_cb;" << std::endl;
-        out_c << "}" << std::endl << std::endl;
+        out << get_indent() << "trace_enter_function(entered_state);" << std::endl;
+        decrease_indent();
 
-        out_c << "void " << reader.getModelName() << "::set_trace_exit_callback(const TraceExit_t& exit_cb)" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "trace_exit_function = exit_cb;" << std::endl;
-        out_c << "}" << std::endl << std::endl;
+        out << get_indent() << "}" << std::endl;
+        decrease_indent();
 
-        out_c << "std::string " << reader.getModelName() << "::get_state_name(" << styler.getStateType() << " s)" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "switch (s)" << std::endl;
-        out_c << getIndent(1) << "{" << std::endl;
-        for (std::size_t i = 0; i < reader.getStateCount(); i++)
+        out << get_indent() << "}" << std::endl << std::endl;
+
+        out << get_indent() << "void " << reader.get_model_name() << "::" << Style::get_trace_exit() << "("
+            << Style::get_state_type() << " exited_state)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "if (nullptr != trace_exit_function)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "trace_exit_function(exited_state);" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
+
+        out << get_indent() << "void " << reader.get_model_name()
+            << "::set_trace_enter_callback(const TraceEntry_t& enter_cb)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "trace_enter_function = enter_cb;" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
+
+        out << get_indent() << "void " << reader.get_model_name()
+            << "::set_trace_exit_callback(const TraceExit_t& exit_cb)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "trace_exit_function = exit_cb;" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
+
+        out << get_indent() << "std::string " << reader.get_model_name() << "::get_state_name("
+            << Style::get_state_type() << " s)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "switch (s)" << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        for (auto i = 0u; i < reader.getStateCount(); i++)
         {
             auto s = reader.getState(i);
             /* Only write down state on actual states that the machine may stay in. */
-            if ((nullptr != s) && ("initial" != s->name) && ("final" != s->name) && (!s->isChoice))
+            if ((nullptr != s) && ("initial" != s->name) && ("final" != s->name) && (!s->is_choice))
             {
-                out_c << getIndent(2) << "case " << styler.getStateType() << "::" << styler.getStateNamePure(s) << ":" << std::endl;
-                out_c << getIndent(3) << "return \"" << styler.getStateNamePure(s) << "\";" << std::endl << std::endl;
+                out << get_indent() << "case " << Style::get_state_type() << "::" << styler.get_state_name_pure(s)
+                    << ":" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "return \"" << styler.get_state_name_pure(s) << "\";" << std::endl << std::endl;
+                decrease_indent();
             }
         }
-        out_c << getIndent(2) << "default:" << std::endl;
-        out_c << getIndent(3) << "// Invalid state." << std::endl;
-        out_c << getIndent(3) << "return {};" << std::endl;
-        out_c << getIndent(1) << "}" << std::endl;
-        out_c << "}" << std::endl << std::endl;
 
-        out_c << styler.getStateType() << " " << reader.getModelName() << "::get_state() const" << std::endl;
-        out_c << "{" << std::endl;
-        out_c << getIndent(1) << "return state;" << std::endl;
-        out_c << "}" << std::endl << std::endl;
+        out << get_indent() << "default:" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "// Invalid state." << std::endl;
+        out << get_indent() << "return {};" << std::endl;
+        decrease_indent();
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl;
+        decrease_indent();
+
+        out << get_indent() << "}" << std::endl << std::endl;
+
+        out << get_indent() << Style::get_state_type() << " " << reader.get_model_name() << "::get_state() const"
+            << std::endl;
+        out << get_indent() << "{" << std::endl;
+        increase_indent();
+
+        out << get_indent() << "return state;" << std::endl;
+        decrease_indent();
+
+        out << "}" << std::endl << std::endl;
     }
 }
 
-void Writer_t::impl_runCycle()
+void Writer::impl_run_cycle(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (("initial" == state->name) || ("final" == state->name))
+        auto state = reader.getState(i);
+        if (("initial" == state->name) || ("final" == state->name) || state->is_choice)
         {
-            // initial or final state, no runcycle
-        }
-        else if (state->isChoice)
-        {
-            // no run cycle for choice
+            // initial, final or choice state, no runcycle
         }
         else
         {
-            size_t indentLevel = 0;
             bool isEmptyBody = true;
+            auto startIndent = indent;
 
-            out_c << "bool " << reader.getModelName() << "::" << styler.getStateRunCycle(state) << "(const " << reader.getModelName() << "_Event& event, " << "bool try_transition)" << std::endl;
-            out_c << "{" << std::endl;
-            indentLevel++;
+            out << get_indent() << "bool " << reader.get_model_name() << "::" << styler.get_state_run_cycle(state)
+                << "(const Event& event, bool try_transition)" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
 
             // write comment declaration here if one exists.
-            const size_t numCommentLines = reader.getDeclCount(state->id, Declaration_Comment);
+            const auto numCommentLines = reader.getDeclCount(state->id, Declaration::Comment);
             if (0 < numCommentLines)
             {
                 isEmptyBody = false;
-                for (size_t j = 0; j < numCommentLines; j++)
+                for (auto j = 0u; j < numCommentLines; j++)
                 {
-                    State_Declaration_t* decl = reader.getDeclFromStateId(state->id, Declaration_Comment, j);
-                    out_c << getIndent(indentLevel) << "// " << decl->declaration << std::endl;
+                    auto decl = reader.getDeclFromStateId(state->id, Declaration::Comment, j);
+                    out << get_indent() << "// " << decl->declaration << std::endl;
                 }
-                out_c << std::endl;
+                out << std::endl;
             }
 
-            out_c << getIndent(indentLevel) << "auto did_transition = try_transition;" << std::endl;
-            out_c << getIndent(indentLevel) << "if (try_transition)" << std::endl;
-            out_c << getIndent(indentLevel) << "{" << std::endl;
-            indentLevel++;
+            out << get_indent() << "auto did_transition = try_transition;" << std::endl;
+            out << get_indent() << "if (try_transition)" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
 
             const size_t nOutTr = reader.getTransitionCountFromStateId(state->id);
 
             // write parent react
-            State_t* parentState = reader.getStateById(state->parent);
+            auto parentState = reader.getStateById(state->parent);
             if (nullptr != parentState)
             {
                 isEmptyBody = false;
                 {
-                    out_c << getIndent(indentLevel) << "if (!" << styler.getStateRunCycle(parentState) << "(event, try_transition))" << std::endl;
-                    out_c << getIndent(indentLevel) << "{" << std::endl;
-                    indentLevel++;
+                    out << get_indent() << "if (!" << styler.get_state_run_cycle(parentState)
+                        << "(event, try_transition))" << std::endl;
+                    out << get_indent() << "{" << std::endl;
+                    increase_indent();
                 }
             }
 
             if (0 == nOutTr)
             {
-                out_c << getIndent(indentLevel) << "did_transition = false;" << std::endl;
+                out << get_indent() << "did_transition = false;" << std::endl;
             }
             else
             {
-                for (size_t j = 0; j < nOutTr; j++)
+                for (auto j = 0u; j < nOutTr; j++)
                 {
-                    Transition_t* tr = reader.getTransitionFrom(state->id, j);
+                    auto tr = reader.getTransitionFrom(state->id, j);
                     if ("null" == tr->event.name)
                     {
-                        State_t* trStB = reader.getStateById(tr->stB);
+                        auto trStB = reader.getStateById(tr->state_b);
                         if (nullptr == trStB)
                         {
-                            errorReport("Null transition!", __LINE__);
+                            error_report("Null transition!", __LINE__);
                         }
                         else if ("final" != trStB->name)
                         {
-                            errorReport("Null transition!", __LINE__);
+                            error_report("Null transition!", __LINE__);
 
                             // handle as a oncycle transition?
                             isEmptyBody = false;
 
-                            out_c << getIndent(indentLevel) << getIfElseIf(j) << " (true)" << std::endl;
-                            out_c << getIndent(indentLevel) << "{" << std::endl;
-                            indentLevel++;
-
-                            // if tracing is enabled
-#if 0
-                            if (writerConfig.doTracing)
-                            {
-                                writer->out_c << getIndent(indentLevel) << getTraceCall_exit(reader) << std::endl;
-                            }
-#endif
+                            out << get_indent() << get_if_else_if(j) << " (true)" << std::endl;
+                            out << get_indent() << "{" << std::endl;
+                            increase_indent();
 
                             // is exit function exists
-                            if (hasExitStatement(state->id))
+                            if (has_exit_statement(state->id))
                             {
-                                out_c << getIndent(indentLevel) << styler.getStateExit(state) << "();" << std::endl;
+                                out << get_indent() << styler.get_state_exit(state) << "();" << std::endl;
                             }
 
-                            indentLevel--;
-                            out_c << getIndent(indentLevel) << "}" << std::endl;
+                            decrease_indent();
+                            out << get_indent() << "}" << std::endl;
                         }
                     }
                     else
                     {
-                        State_t* trStB = reader.getStateById(tr->stB);
+                        auto trStB = reader.getStateById(tr->state_b);
                         if (nullptr == trStB)
                         {
-                            errorReport("Null transition!", __LINE__);
+                            error_report("Null transition!", __LINE__);
                         }
                         else
                         {
                             isEmptyBody = false;
 
-                            if (tr->event.isTimeEvent)
+                            if (tr->event.is_time_event)
                             {
-                                if (tr->hasGuard)
+                                if (tr->has_guard)
                                 {
-                                    std::string guardStr = parseGuard(tr->guard);
-                                    out_c << getIndent(indentLevel)
-                                                  << getIfElseIf(j)
-                                                  << " ((" << reader.getModelName() << "_EventId::time_"
-                                                  << tr->event.name
-                                                  << " == event.id) && ("
-                                                  << guardStr
-                                                  << "))"
-                                                  << std::endl;
+                                    std::string guardStr = parse_guard(tr->guard);
+                                    out << get_indent() << get_if_else_if(j) << " (("
+                                        << "EventId::time_" << Style::get_event_name(&tr->event) << " == event.id) && ("
+                                        << guardStr << "))" << std::endl;
                                 }
                                 else
                                 {
-                                    out_c << getIndent(indentLevel)
-                                                  << getIfElseIf(j)
-                                                  << " (" << reader.getModelName() << "_EventId::time_"
-                                                  << tr->event.name
-                                                  << " == event.id)"
-                                                  << std::endl;
+                                    out << get_indent() << get_if_else_if(j) << " ("
+                                        << "EventId::time_" << Style::get_event_name(&tr->event) << " == event.id)"
+                                        << std::endl;
                                 }
                             }
                             else
                             {
-                                if (tr->hasGuard)
+                                if (tr->has_guard)
                                 {
-                                    std::string guardStr = parseGuard(tr->guard);
-                                    out_c << getIndent(indentLevel)
-                                                  << getIfElseIf(j);
-                                    if (Event_Direction_Incoming == tr->event.direction)
+                                    std::string guardStr = parse_guard(tr->guard);
+                                    out << get_indent() << get_if_else_if(j);
+                                    if (EventDirection::Incoming == tr->event.direction)
                                     {
-                                        out_c << " ((" << reader.getModelName() << "_EventId::in_"
-                                                      << tr->event.name
-                                                      << " == event.id) && (";
+                                        out << " ((EventId::in_" << Style::get_event_name(&tr->event)
+                                            << " == event.id) && (";
                                     }
-                                    else if (Event_Direction_Internal == tr->event.direction)
+                                    else if (EventDirection::Internal == tr->event.direction)
                                     {
-                                        out_c << " ((" << reader.getModelName() << "_EventId::internal_"
-                                                      << tr->event.name
-                                                      << " == event.id) && (";
+                                        out << " ((EventId::internal_" << Style::get_event_name(&tr->event)
+                                            << " == event.id) && (";
                                     }
                                     else
                                     {
-                                        out_c << " ((" << reader.getModelName() << "_EventId::out_"
-                                                      << tr->event.name
-                                                      << " == event.id) && (";
+                                        out << " ((EventId::out_" << Style::get_event_name(&tr->event)
+                                            << " == event.id) && (";
                                     }
-                                    out_c << guardStr
-                                                  << "))"
-                                                  << std::endl;
+                                    out << guardStr << "))" << std::endl;
                                 }
                                 else
                                 {
-                                    if (Event_Direction_Incoming == tr->event.direction)
+                                    if (EventDirection::Incoming == tr->event.direction)
                                     {
-                                        out_c << getIndent(indentLevel) << getIfElseIf(j)
-                                            << " (" << reader.getModelName() << "_EventId::in_"
-                                            << tr->event.name
-                                            << " == event.id)" << std::endl;
+                                        out << get_indent() << get_if_else_if(j) << " (EventId::in_"
+                                            << Style::get_event_name(&tr->event) << " == event.id)" << std::endl;
                                     }
-                                    else if (Event_Direction_Internal == tr->event.direction)
+                                    else if (EventDirection::Internal == tr->event.direction)
                                     {
-                                        out_c << getIndent(indentLevel) << getIfElseIf(j)
-                                            << " (" << reader.getModelName() << "_EventId::internal_"
-                                            << tr->event.name
-                                            << " == event.id)" << std::endl;
+                                        out << get_indent() << get_if_else_if(j) << " (EventId::internal_"
+                                            << Style::get_event_name(&tr->event) << " == event.id)" << std::endl;
                                     }
                                     else
                                     {
-                                        out_c << getIndent(indentLevel) << getIfElseIf(j)
-                                            << " (" << reader.getModelName() << "_EventId::out_"
-                                            << tr->event.name
-                                            << " == event.id)" << std::endl;
+                                        out << get_indent() << get_if_else_if(j) << " (EventId::out_"
+                                            << Style::get_event_name(&tr->event) << " == event.id)" << std::endl;
                                     }
                                 }
                             }
-                            out_c << getIndent(indentLevel) << "{" << std::endl;
-                            indentLevel++;
+                            out << get_indent() << "{" << std::endl;
+                            increase_indent();
 
-                            const bool didChildExits = parseChildExits(state, indentLevel, state->id, false);
+                            const bool didChildExits = parse_child_exits(out, state, state->id, false);
 
                             if (didChildExits)
                             {
-                                out_c << std::endl;
+                                out << std::endl;
                             }
                             else
                             {
-                                if (hasExitStatement(state->id))
+                                if (has_exit_statement(state->id))
                                 {
-                                    out_c << getIndent(indentLevel) << "// Handle super-step exit." << std::endl;
-                                    out_c << getIndent(indentLevel) << styler.getStateExit(state) << "();" << std::endl;
+                                    out << get_indent() << "// Handle super-step exit." << std::endl;
+                                    out << get_indent() << styler.get_state_exit(state) << "();" << std::endl;
                                 }
-                                if (config.doTracing)
+                                if (config.do_tracing)
                                 {
-                                    out_c << getIndent(indentLevel) << getTraceCall_exit(state) << std::endl;
+                                    out << get_indent() << get_trace_call_exit(state) << std::endl;
                                 }
                                 /* Extra new-line */
-                                if ((hasExitStatement(state->id)) || (config.doTracing))
+                                if ((has_exit_statement(state->id)) || (config.do_tracing))
                                 {
-                                    out_c << std::endl;
+                                    out << std::endl;
                                 }
                             }
 
                             // TODO: do entry actins on all states entered
                             // towards the goal! Might needs some work..
-                            std::vector<State_t*> enteredStates = findEntryState(trStB);
+                            auto enteredStates = find_entry_state(trStB);
 
                             if (!enteredStates.empty())
                             {
-                                out_c << getIndent(indentLevel) << "// Handle super-step entry." << std::endl;
+                                out << get_indent() << "// Handle super-step entry." << std::endl;
                             }
 
-                            State_t* finalState = nullptr;
-                            for (size_t q = 0; q < enteredStates.size(); q++)
+                            State* finalState = nullptr;
+                            for (auto& enteredState : enteredStates)
                             {
-                                finalState = enteredStates[q];
+                                finalState = enteredState;
 
-                                if (hasEntryStatement(finalState->id))
+                                if (has_entry_statement(finalState->id))
                                 {
-                                    out_c << getIndent(indentLevel) << styler.getStateEntry(finalState) << "();" << std::endl;
+                                    out << get_indent() << styler.get_state_entry(finalState) << "();" << std::endl;
                                 }
 
-                                if (config.doTracing)
+                                if (config.do_tracing)
                                 {
                                     // Don't trace entering the choice states, since the state does not exist.
-                                    if (!finalState->isChoice)
+                                    if (!finalState->is_choice)
                                     {
-                                        out_c << getIndent(indentLevel) << getTraceCall_entry(finalState) << std::endl;
+                                        out << get_indent() << get_trace_call_entry(finalState) << std::endl;
                                     }
                                 }
                             }
 
                             // handle choice node?
-                            if ((nullptr != finalState) && (finalState->isChoice))
+                            if ((nullptr != finalState) && (finalState->is_choice))
                             {
-                                parseChoicePath(finalState, indentLevel);
+                                parse_choice_path(out, finalState);
                             }
                             else
                             {
-                                out_c << getIndent(indentLevel) << "state = " << styler.getStateName(finalState) << ";" << std::endl;
+                                out << get_indent() << "state = " << styler.get_state_name(finalState) << ";"
+                                    << std::endl;
                             }
+                            decrease_indent();
 
-                            indentLevel--;
-                            out_c << getIndent(indentLevel) << "}" << std::endl;
+                            out << get_indent() << "}" << std::endl;
                         }
                     }
                 }
 
-                out_c << getIndent(indentLevel) << "else" << std::endl;
-                out_c << getIndent(indentLevel) << "{" << std::endl;
-                indentLevel++;
-                out_c << getIndent(indentLevel) << "did_transition = false;" << std::endl;
-                indentLevel--;
-                out_c << getIndent(indentLevel) << "}" << std::endl;
+                out << get_indent() << "else" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                out << get_indent() << "did_transition = false;" << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
             }
 
-            while (1 < indentLevel)
+            while (startIndent + 1 < indent)
             {
-                indentLevel--;
-                out_c << getIndent(indentLevel) << "}" << std::endl;
+                decrease_indent();
+                out << get_indent() << "}" << std::endl;
             }
 
-#if 0
-            if (isEmptyBody)
-            {
-                out_c << getIndent(indentLevel) << "(void) try_transition;" << std::endl;
-            }
-#endif
+            out << get_indent() << "return did_transition;" << std::endl;
+            decrease_indent();
 
-            out_c << getIndent(indentLevel) << "return did_transition;" << std::endl;
-            out_c << "}" << std::endl << std::endl;
+            out << get_indent() << "}" << std::endl << std::endl;
         }
     }
 }
 
-void Writer_t::impl_entryAction()
+void Writer::impl_entry_action(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (0 != state->name.compare("initial"))
+        auto state = reader.getState(i);
+        if ("initial" != state->name)
         {
-            const size_t numDecl = reader.getDeclCount(state->id, Declaration_Entry);
-            size_t numTimeEv = 0;
-            for (size_t j = 0; j < reader.getTransitionCountFromStateId(state->id); j++)
+            const auto numDecl   = reader.getDeclCount(state->id, Declaration::Entry);
+            size_t     numTimeEv = 0;
+            for (auto j = 0u; j < reader.getTransitionCountFromStateId(state->id); j++)
             {
-                Transition_t* tr = reader.getTransitionFrom(state->id, j);
-                if ((nullptr != tr) && (tr->event.isTimeEvent))
+                auto tr = reader.getTransitionFrom(state->id, j);
+                if ((nullptr != tr) && (tr->event.is_time_event))
                 {
                     numTimeEv++;
                 }
@@ -1370,25 +1346,33 @@ void Writer_t::impl_entryAction()
 
             if ((0 < numDecl) || (0 < numTimeEv))
             {
-                out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getStateEntry(state) << "()" << std::endl;
-                out_c << getIndent(0) << "{" << std::endl;
+                out << get_indent() << "void " << reader.get_model_name() << "::" << styler.get_state_entry(state)
+                    << "()" << std::endl;
+                out << get_indent() << "{" << std::endl;
 
                 // start timers
                 size_t writeIndex = 0;
-                for (size_t j = 0; j < reader.getTransitionCountFromStateId(state->id); j++)
+                increase_indent();
+
+                for (auto j = 0u; j < reader.getTransitionCountFromStateId(state->id); j++)
                 {
-                    Transition_t* tr = reader.getTransitionFrom(state->id, j);
-                    if ((nullptr != tr) && (tr->event.isTimeEvent))
+                    auto tr = reader.getTransitionFrom(state->id, j);
+                    if ((nullptr != tr) && (tr->event.is_time_event))
                     {
-                        out_c << getIndent(1) << "/* Start timer " << tr->event.name << " with timeout of " << tr->event.expireTime_ms << " ms. */" << std::endl;
-                        out_c << getIndent(1) << "time_events." << tr->event.name << ".timeout_ms = " << tr->event.expireTime_ms << ";" << std::endl;
-                        out_c << getIndent(1) << "time_events." << tr->event.name << ".expireTime_ms = time_now_ms + " << tr->event.expireTime_ms << ";" << std::endl;
-                        out_c << getIndent(1) << "time_events." << tr->event.name << ".isPeriodic = " << (tr->event.isPeriodic ? "true;" : "false;") << std::endl;
-                        out_c << getIndent(1) << "time_events." << tr->event.name << ".isStarted = true;" << std::endl;
+                        out << get_indent() << "/* Start timer " << Style::get_event_name(&tr->event)
+                            << " with timeout of " << tr->event.expire_time_ms << " ms. */" << std::endl;
+                        out << get_indent() << "time_events." << Style::get_event_name(&tr->event)
+                            << ".timeout_ms = " << tr->event.expire_time_ms << ";" << std::endl;
+                        out << get_indent() << "time_events." << Style::get_event_name(&tr->event)
+                            << ".expire_time_ms = time_now_ms + " << tr->event.expire_time_ms << ";" << std::endl;
+                        out << get_indent() << "time_events." << Style::get_event_name(&tr->event)
+                            << ".is_periodic = " << (tr->event.is_periodic ? "true;" : "false;") << std::endl;
+                        out << get_indent() << "time_events." << Style::get_event_name(&tr->event)
+                            << ".is_started = true;" << std::endl;
                         writeIndex++;
                         if (writeIndex < numTimeEv)
                         {
-                            out_c << std::endl;
+                            out << std::endl;
                         }
                     }
                 }
@@ -1396,36 +1380,38 @@ void Writer_t::impl_entryAction()
                 if ((0 < numDecl) && (0 < numTimeEv))
                 {
                     // add a space between the parts
-                    out_c << std::endl;
+                    out << std::endl;
                 }
 
-                for (size_t j = 0; j < numDecl; j++)
+                for (auto j = 0u; j < numDecl; j++)
                 {
-                    State_Declaration_t* decl = reader.getDeclFromStateId(state->id, Declaration_Entry, j);
-                    if (Declaration_Entry == decl->type)
+                    auto decl = reader.getDeclFromStateId(state->id, Declaration::Entry, j);
+                    if (Declaration::Entry == decl->type)
                     {
-                        parseDeclaration(decl->declaration);
+                        parse_declaration(out, decl->declaration);
                     }
                 }
-                out_c << getIndent(0) << "}" << std::endl << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl << std::endl;
             }
         }
     }
 }
 
-void Writer_t::impl_exitAction()
+void Writer::impl_exit_action(std::ofstream& out)
 {
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (0 != state->name.compare("initial"))
+        auto state = reader.getState(i);
+        if ("initial" != state->name)
         {
-            const size_t numDecl = reader.getDeclCount(state->id, Declaration_Exit);
-            size_t numTimeEv = 0;
-            for (size_t j = 0; j < reader.getTransitionCountFromStateId(state->id); j++)
+            const auto numDecl   = reader.getDeclCount(state->id, Declaration::Exit);
+            size_t     numTimeEv = 0;
+            for (auto j = 0u; j < reader.getTransitionCountFromStateId(state->id); j++)
             {
-                Transition_t* tr = reader.getTransitionFrom(state->id, j);
-                if ((nullptr != tr) && (tr->event.isTimeEvent))
+                auto tr = reader.getTransitionFrom(state->id, j);
+                if ((nullptr != tr) && (tr->event.is_time_event))
                 {
                     numTimeEv++;
                 }
@@ -1433,47 +1419,52 @@ void Writer_t::impl_exitAction()
 
             if ((0 < numDecl) || (0 < numTimeEv))
             {
-                out_c << getIndent(0) << "void " << reader.getModelName() << "::" << styler.getStateExit(state) << "()" << std::endl;
-                out_c << getIndent(0) << "{" << std::endl;
+                out << get_indent() << "void " << reader.get_model_name() << "::" << styler.get_state_exit(state)
+                    << "()" << std::endl;
+                out << get_indent() << "{" << std::endl;
 
                 // stop timers
-                for (size_t j = 0; j < reader.getTransitionCountFromStateId(state->id); j++)
+                increase_indent();
+                for (auto j = 0u; j < reader.getTransitionCountFromStateId(state->id); j++)
                 {
-                    Transition_t* tr = reader.getTransitionFrom(state->id, j);
-                    if ((nullptr != tr) && (tr->event.isTimeEvent))
+                    auto tr = reader.getTransitionFrom(state->id, j);
+                    if ((nullptr != tr) && (tr->event.is_time_event))
                     {
-                        out_c << getIndent(1) << "time_events." << tr->event.name << ".isStarted = false;" << std::endl;
+                        out << get_indent() << "time_events." << Style::get_event_name(&tr->event)
+                            << ".is_started = false;" << std::endl;
                     }
                 }
 
                 if ((0 < numDecl) && (0 < numTimeEv))
                 {
                     // add a space between the parts
-                    out_c << std::endl;
+                    out << std::endl;
                 }
 
                 if (0 < numDecl)
                 {
-                    for (size_t j = 0; j < numDecl; j++)
+                    for (auto j = 0u; j < numDecl; j++)
                     {
-                        State_Declaration_t* decl = reader.getDeclFromStateId(state->id, Declaration_Exit, j);
-                        if (Declaration_Exit == decl->type)
+                        auto decl = reader.getDeclFromStateId(state->id, Declaration::Exit, j);
+                        if (Declaration::Exit == decl->type)
                         {
-                            parseDeclaration(decl->declaration);
+                            parse_declaration(out, decl->declaration);
                         }
                     }
                 }
-                out_c << getIndent(0) << "}" << std::endl << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl << std::endl;
             }
         }
     }
 }
 
-std::vector<std::string> Writer_t::tokenize(std::string str)
+std::vector<std::string> Writer::tokenize(const std::string& str)
 {
-    std::vector<std::string> tokens;
-    std::string tmp;
-    std::istringstream iss(str);
+    std::vector<std::string> tokens {};
+    std::string              tmp {};
+    std::istringstream       iss(str);
     while (iss >> tmp)
     {
         tokens.push_back(tmp);
@@ -1481,18 +1472,19 @@ std::vector<std::string> Writer_t::tokenize(std::string str)
     return (tokens);
 }
 
-void Writer_t::parseDeclaration(const std::string& declaration)
+void Writer::parse_declaration(std::ofstream& out, const std::string& declaration)
 {
     // replace all X that corresponds with an event name with handle->events.X.param
     // also replace any word found that corresponds to a variable to its
     // correct location, e.g., bus -> handle->variables.private.bus
-    std::string wstr = "";
+    std::string wstr {};
 
-    bool isParsed = false;
-    size_t start = 0;
+    auto   isParsed = false;
+    size_t start    = 0;
+
     while (!isParsed)
     {
-        const size_t replaceStart = declaration.find_first_of("$", start);
+        const size_t replaceStart = declaration.find_first_of('$', start);
         if (std::string::npos == replaceStart)
         {
             // copy remains
@@ -1504,7 +1496,7 @@ void Writer_t::parseDeclaration(const std::string& declaration)
             // copy until start of replacement
             const size_t firstLength = (replaceStart - start);
             wstr += declaration.substr(start, firstLength);
-            const size_t replaceEnd = declaration.find_first_of("}", replaceStart);
+            const size_t replaceEnd = declaration.find_first_of('}', replaceStart);
             if (std::string::npos == replaceEnd)
             {
                 // error!
@@ -1513,17 +1505,17 @@ void Writer_t::parseDeclaration(const std::string& declaration)
             }
             else
             {
-                const size_t replaceLength = (replaceEnd - replaceStart) - 2;
-                const std::string replaceString = declaration.substr(replaceStart+2, replaceLength);
-                bool isReplaced = false;
+                const auto        replaceLength = (replaceEnd - replaceStart) - 2;
+                const std::string replaceString = declaration.substr(replaceStart + 2, replaceLength);
+                bool              isReplaced    = false;
 
-                for (size_t i = 0; i < reader.getVariableCount(); i++)
+                for (auto i = 0u; i < reader.get_variable_count(); i++)
                 {
-                    Variable_t* var = reader.getVariable(i);
-                    if (0 == var->name.compare(replaceString))
+                    auto var = reader.get_variable(i);
+                    if (replaceString == var->name)
                     {
                         wstr += "variables.";
-                        if (var->isPrivate)
+                        if (var->is_private)
                         {
                             wstr += "internal.";
                         }
@@ -1531,7 +1523,7 @@ void Writer_t::parseDeclaration(const std::string& declaration)
                         {
                             wstr += "exported.";
                         }
-                        wstr += var->name;
+                        wstr += Style::get_variable_name(var);
                         isReplaced = true;
                         break;
                     }
@@ -1539,12 +1531,29 @@ void Writer_t::parseDeclaration(const std::string& declaration)
 
                 if (!isReplaced)
                 {
-                    for (size_t i = 0; i < reader.getInEventCount(); i++)
+                    for (auto i = 0u; i < reader.getInEventCount(); i++)
                     {
-                        Event_t* ev = reader.getInEvent(i);
-                        if (0 == ev->name.compare(replaceString))
+                        auto ev = reader.getInEvent(i);
+                        if (replaceString == ev->name)
                         {
-                            wstr += "events.inEvents." + ev->name + "_value";
+                            switch (ev->direction)
+                            {
+                                case EventDirection::Incoming:
+                                    wstr += "active_event.parameter.in_";
+                                    break;
+
+                                case EventDirection::Outgoing:
+                                    wstr += "active_event.parameter.out_";
+                                    break;
+
+                                case EventDirection::Internal:
+                                    wstr += "active_event.parameter.internal_";
+                                    break;
+
+                                default:
+                                    break;
+                            }
+                            wstr += Style::get_event_name(ev);
                             isReplaced = true;
                             break;
                         }
@@ -1562,9 +1571,10 @@ void Writer_t::parseDeclaration(const std::string& declaration)
     }
 
     // search for "raise X"
-    std::string outstr = "";
+    std::string outstr {};
     isParsed = false;
-    start = 0;
+    start    = 0;
+
     while (!isParsed)
     {
         const size_t raiseKeywordPosition = wstr.find("raise", start);
@@ -1577,7 +1587,7 @@ void Writer_t::parseDeclaration(const std::string& declaration)
         else
         {
             // find next space
-            const size_t firstSpacePosition = wstr.find_first_of(" ", raiseKeywordPosition);
+            const size_t firstSpacePosition = wstr.find_first_of(' ', raiseKeywordPosition);
             if (std::string::npos == firstSpacePosition)
             {
                 // no space detected after the keyword
@@ -1597,13 +1607,14 @@ void Writer_t::parseDeclaration(const std::string& declaration)
                     }
                     else
                     {
-                        outstr += styler.getEventRaise(tokens[0]) + "(";
-                        if (ev->requireParameter)
+                        outstr += Style::get_event_raise(tokens[0]) + "(";
+                        if (ev->require_parameter)
                         {
                             if (tokens.size() < 2)
                             {
                                 outstr += "{}";
-                            } else
+                            }
+                            else
                             {
                                 outstr += tokens[1];
                             }
@@ -1621,21 +1632,22 @@ void Writer_t::parseDeclaration(const std::string& declaration)
         outstr += ";";
     }
 
-    out_c << getIndent(1) << outstr << std::endl;
+    out << get_indent() << outstr << std::endl;
 }
 
-std::string Writer_t::parseGuard(const std::string& guardStrRaw)
+std::string Writer::parse_guard(const std::string& guardStrRaw)
 {
     // replace all X that corresponds with an event name with handle->events.X.param
     // also replace any word found that corresponds to a variable to its
     // correct location, e.g., bus -> handle->variables.private.bus
-    std::string wstr = "";
+    std::string wstr {};
 
-    bool isParsed = false;
-    size_t start = 0;
+    auto   isParsed = false;
+    size_t start    = 0;
+
     while (!isParsed)
     {
-        const size_t replaceStart = guardStrRaw.find_first_of("$", start);
+        const size_t replaceStart = guardStrRaw.find_first_of('$', start);
         if (std::string::npos == replaceStart)
         {
             // copy remains
@@ -1647,7 +1659,7 @@ std::string Writer_t::parseGuard(const std::string& guardStrRaw)
             // copy until start of replacement
             const size_t firstLength = (replaceStart - start);
             wstr += guardStrRaw.substr(start, firstLength);
-            const size_t replaceEnd = guardStrRaw.find_first_of("}", replaceStart);
+            const size_t replaceEnd = guardStrRaw.find_first_of('}', replaceStart);
             if (std::string::npos == replaceEnd)
             {
                 // error!
@@ -1656,17 +1668,17 @@ std::string Writer_t::parseGuard(const std::string& guardStrRaw)
             }
             else
             {
-                const size_t replaceLength = (replaceEnd - replaceStart) - 2;
-                const std::string replaceString = guardStrRaw.substr(replaceStart+2, replaceLength);
-                bool isReplaced = false;
+                const size_t      replaceLength = (replaceEnd - replaceStart) - 2;
+                const std::string replaceString = guardStrRaw.substr(replaceStart + 2, replaceLength);
+                bool              isReplaced    = false;
 
-                for (size_t i = 0; i < reader.getVariableCount(); i++)
+                for (auto i = 0u; i < reader.get_variable_count(); i++)
                 {
-                    Variable_t* var = reader.getVariable(i);
-                    if (0 == var->name.compare(replaceString))
+                    auto var = reader.get_variable(i);
+                    if (replaceString == var->name)
                     {
                         wstr += "variables.";
-                        if (var->isPrivate)
+                        if (var->is_private)
                         {
                             wstr += "internal.";
                         }
@@ -1682,10 +1694,10 @@ std::string Writer_t::parseGuard(const std::string& guardStrRaw)
 
                 if (!isReplaced)
                 {
-                    for (size_t i = 0; i < reader.getInEventCount(); i++)
+                    for (auto i = 0u; i < reader.getInEventCount(); i++)
                     {
-                        Event_t* ev = reader.getInEvent(i);
-                        if (0 == ev->name.compare(replaceString))
+                        auto ev = reader.getInEvent(i);
+                        if (replaceString == ev->name)
                         {
                             wstr += "events.inEvents." + ev->name + ".param";
                             isReplaced = true;
@@ -1707,141 +1719,150 @@ std::string Writer_t::parseGuard(const std::string& guardStrRaw)
     return (wstr);
 }
 
-void Writer_t::parseChoicePath(State_t* state, size_t indentLevel)
+void Writer::parse_choice_path(std::ofstream& out, State* state)
 {
     // check all transitions from the choice..
-    out_c << std::endl << getIndent(indentLevel) << "/* Choice: " << state->name << " */" << std::endl;
+    out << std::endl << get_indent() << "/* Choice: " << state->name << " */" << std::endl;
 
     const size_t numChoiceTr = reader.getTransitionCountFromStateId(state->id);
     if (numChoiceTr < 2)
     {
-        errorReport("Ony one transition from choice " + state->name, __LINE__);
+        error_report("Ony one transition from choice " + state->name, __LINE__);
     }
     else
     {
-        Transition_t* defaultTr = nullptr;
-        size_t k = 0;
-        for (size_t j = 0; j < numChoiceTr; j++)
+        Transition* defaultTr = nullptr;
+        size_t      k         = 0;
+
+        for (auto j = 0u; j < numChoiceTr; j++)
         {
-            Transition_t* tr = reader.getTransitionFrom(state->id, j);
-            if (true != tr->hasGuard)
+            auto tr = reader.getTransitionFrom(state->id, j);
+            if (!tr->has_guard)
             {
                 defaultTr = tr;
             }
             else
             {
                 // handle if statement
-                out_c << getIndent(indentLevel + 0) << getIfElseIf(k++) << " (" << parseGuard(tr->guard) << ")" << std::endl;
-                out_c << getIndent(indentLevel + 0) << "{" << std::endl;
-                State_t* guardedState = reader.getStateById(tr->stB);
-                out_c << getIndent(indentLevel + 1) << "// goto: " << guardedState->name << std::endl;
+                out << get_indent() << get_if_else_if(k++) << " (" << parse_guard(tr->guard) << ")" << std::endl;
+                out << get_indent() << "{" << std::endl;
+                increase_indent();
+
+                auto guardedState = reader.getStateById(tr->state_b);
+                out << get_indent() << "// goto: " << guardedState->name << std::endl;
+
                 if (nullptr == guardedState)
                 {
-                    errorReport("Invalid transition from choice " + state->name, __LINE__);
+                    error_report("Invalid transition from choice " + state->name, __LINE__);
                 }
                 else
                 {
-                    std::vector<State_t*> enteredStates = findEntryState(guardedState);
-                    State_t* finalState = nullptr;
-                    for (size_t j = 0; j < enteredStates.size(); j++)
+                    auto   enteredStates = find_entry_state(guardedState);
+                    State* finalState    = nullptr;
+
+                    for (auto& enteredState : enteredStates)
                     {
-                        finalState = enteredStates[j];
+                        finalState = enteredState;
 
                         // TODO: fix call so send state name.
 #if 0
                         if (writerConfig.doTracing)
                         {
-                            out_c << getIndent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
+                            out_c << get_indent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
                         }
 #endif
 
-                        if (0 < reader.getDeclCount(finalState->id, Declaration_Entry))
+                        if (0 < reader.getDeclCount(finalState->id, Declaration::Entry))
                         {
-                            out_c << getIndent(indentLevel + 1) << styler.getStateEntry(finalState) << "();" << std::endl;
+                            out << get_indent() << styler.get_state_entry(finalState) << "();" << std::endl;
                         }
                     }
                     if (nullptr != finalState)
                     {
-                        if (finalState->isChoice)
+                        if (finalState->is_choice)
                         {
                             // nest ..
-                            parseChoicePath(finalState, indentLevel + 1);
+                            parse_choice_path(out, finalState);
                         }
                         else
                         {
-                            out_c << getIndent(indentLevel + 1) << "state = " << styler.getStateName(finalState) << ";" << std::endl;
+                            out << get_indent() << "state = " << styler.get_state_name(finalState) << ";" << std::endl;
                         }
                     }
                 }
-                out_c << getIndent(indentLevel + 0) << "}" << std::endl;
+                decrease_indent();
+
+                out << get_indent() << "}" << std::endl;
             }
         }
         if (nullptr != defaultTr)
         {
             // write default transition.
-            out_c << getIndent(indentLevel + 0) << "else" << std::endl;
-            out_c << getIndent(indentLevel + 0) << "{" << std::endl;
-            State_t* guardedState = reader.getStateById(defaultTr->stB);
-            out_c << getIndent(indentLevel + 1) << "// goto: " << guardedState->name << std::endl;
+            out << get_indent() << "else" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
+
+            auto guardedState = reader.getStateById(defaultTr->state_b);
+            out << get_indent() << "// goto: " << guardedState->name << std::endl;
+
             if (nullptr == guardedState)
             {
-                errorReport("Invalid transition from choice " + state->name, __LINE__);
+                error_report("Invalid transition from choice " + state->name, __LINE__);
             }
             else
             {
-                std::vector<State_t*> enteredStates = findEntryState(guardedState);
-                State_t* finalState = nullptr;
-                for (size_t j = 0; j < enteredStates.size(); j++)
+                auto   enteredStates = find_entry_state(guardedState);
+                State* finalState    = nullptr;
+                for (auto& enteredState : enteredStates)
                 {
-                    finalState = enteredStates[j];
+                    finalState = enteredState;
 
                     // TODO: fix call so send state name.
 #if 0
                     if (writerConfig.doTracing)
                     {
-                        writer->out_c << getIndent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
+                        writer->out_c << get_indent(indentLevel + 1) << getTraceCall_entry(reader) << std::endl;
                     }
 #endif
 
-                    if (0 < reader.getDeclCount(finalState->id, Declaration_Entry))
+                    if (0 < reader.getDeclCount(finalState->id, Declaration::Entry))
                     {
-                        out_c << getIndent(indentLevel + 1) << styler.getStateEntry(finalState) << "();" << std::endl;
+                        out << get_indent() << styler.get_state_entry(finalState) << "();" << std::endl;
                     }
                 }
                 if (nullptr != finalState)
                 {
-                    if (finalState->isChoice)
+                    if (finalState->is_choice)
                     {
                         // nest ..
-                        parseChoicePath(finalState, indentLevel + 1);
+                        parse_choice_path(out, finalState);
                     }
                     else
                     {
-                        out_c << getIndent(indentLevel + 1) << "state = " << styler.getStateName(finalState) << ";" << std::endl;
+                        out << get_indent() << "state = " << styler.get_state_name(finalState) << ";" << std::endl;
                     }
                 }
             }
-            out_c << getIndent(indentLevel + 0) << "}" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "}" << std::endl;
         }
         else
         {
-            errorReport("No default transition from " + state->name, __LINE__);
+            error_report("No default transition from " + state->name, __LINE__);
         }
     }
 }
 
-std::vector<State_t*> Writer_t::getChildStates(State_t* currentState)
+std::vector<State*> Writer::get_child_states(State* currentState)
 {
-    std::vector<State_t*> childStates;
-    for (size_t j = 0; j < reader.getStateCount(); j++)
+    std::vector<State*> childStates;
+    for (auto j = 0u; j < reader.getStateCount(); j++)
     {
-        State_t* child = reader.getState(j);
+        auto child = reader.getState(j);
 
-        if ((nullptr != child) &&
-            (child->parent == currentState->id) &&
-            (0 != child->name.compare("initial")) &&
-            (0 != child->name.compare("final")) &&
-            (!child->isChoice))
+        if ((nullptr != child) && (child->parent == currentState->id) && ("initial" != child->name)
+            && (0 != child->name.compare("final")) && (!child->is_choice))
         {
             childStates.push_back(child);
         }
@@ -1849,22 +1870,22 @@ std::vector<State_t*> Writer_t::getChildStates(State_t* currentState)
     return (childStates);
 }
 
-bool Writer_t::parseChildExits(State_t* currentState, size_t indentLevel, const State_Id_t topState, const bool didPreviousWrite)
+bool Writer::parse_child_exits(std::ofstream& out, State* currentState, StateId topState, bool didPreviousWrite)
 {
     bool didWrite = didPreviousWrite;
 
-    std::vector<State_t*> children = getChildStates(currentState);
-    const size_t nChildren = children.size();
+    std::vector<State*> children  = get_child_states(currentState);
+    const size_t        nChildren = children.size();
 
     if (0 == nChildren)
     {
         // need to detect here if any state from current to top state has exit
         // actions..
-        State_t* tmpState = currentState;
+        auto tmpState      = currentState;
         bool hasExitAction = false;
         while (topState != tmpState->id)
         {
-            if (hasExitStatement(tmpState->id))
+            if (has_exit_statement(tmpState->id))
             {
                 hasExitAction = true;
                 break;
@@ -1876,63 +1897,65 @@ bool Writer_t::parseChildExits(State_t* currentState, size_t indentLevel, const 
         {
             if (!didWrite)
             {
-                out_c << getIndent(indentLevel) << "/* Handle super-step exit. */" << std::endl;
+                out << get_indent() << "/* Handle super-step exit. */" << std::endl;
             }
-            out_c << getIndent(indentLevel) << getIfElseIf(didWrite ? 1 : 0) << " (" << styler.getStateName(currentState) << " == state)" << std::endl;
-            out_c << getIndent(indentLevel) << "{" << std::endl;
-            indentLevel++;
+            out << get_indent() << get_if_else_if(didWrite ? 1 : 0) << " (" << styler.get_state_name(currentState)
+                << " == state)" << std::endl;
+            out << get_indent() << "{" << std::endl;
+            increase_indent();
 
-            if (hasExitStatement(currentState->id))
+            if (has_exit_statement(currentState->id))
             {
-                out_c << getIndent(indentLevel) << styler.getStateExit(currentState) << "();" << std::endl;
+                out << get_indent() << styler.get_state_exit(currentState) << "();" << std::endl;
             }
 
-            if (config.doTracing)
+            if (config.do_tracing)
             {
-                out_c << getIndent(indentLevel) << getTraceCall_exit(currentState) << std::endl;
+                out << get_indent() << get_trace_call_exit(currentState) << std::endl;
             }
 
             // go up to the top
             while (topState != currentState->id)
             {
                 currentState = reader.getStateById(currentState->parent);
-                if (hasExitStatement(currentState->id))
+                if (has_exit_statement(currentState->id))
                 {
-                    out_c << getIndent(indentLevel) << styler.getStateExit(currentState) << "();" << std::endl;
+                    out << get_indent() << styler.get_state_exit(currentState) << "();" << std::endl;
                 }
-                if (config.doTracing)
+                if (config.do_tracing)
                 {
-                    out_c << getIndent(indentLevel) << getTraceCall_exit(currentState) << std::endl;
+                    out << get_indent() << get_trace_call_exit(currentState) << std::endl;
                 }
             }
-            indentLevel--;
-            out_c << getIndent(indentLevel) << "}" << std::endl;
+            decrease_indent();
+
+            out << get_indent() << "}" << std::endl;
             didWrite = true;
         }
     }
     else
     {
-        for (size_t j = 0; j < nChildren; j++)
+        for (auto j = 0u; j < nChildren; j++)
         {
-            State_t* child = children[j];
-            didWrite = parseChildExits(child, indentLevel, topState, didWrite);
+            auto child = children[j];
+            didWrite   = parse_child_exits(out, child, topState, didWrite);
         }
     }
 
     return (didWrite);
 }
 
-bool Writer_t::hasEntryStatement(const State_Id_t stateId)
+bool Writer::has_entry_statement(StateId stateId)
 {
-    if (0u < reader.getDeclCount(stateId, Declaration_Entry))
+    if (0u < reader.getDeclCount(stateId, Declaration::Entry))
     {
-        return (true);
+        return true;
     }
     else
     {
-        for (size_t j = 0; j < reader.getTransitionCountFromStateId(stateId); j++)
+        for (auto j = 0u; j < reader.getTransitionCountFromStateId(stateId); j++)
         {
-            if (reader.getTransitionFrom(stateId, j)->event.isTimeEvent)
+            if (reader.getTransitionFrom(stateId, j)->event.is_time_event)
             {
                 return (true);
             }
@@ -1941,17 +1964,17 @@ bool Writer_t::hasEntryStatement(const State_Id_t stateId)
     return (false);
 }
 
-bool Writer_t::hasExitStatement(const State_Id_t stateId)
+bool Writer::has_exit_statement(StateId stateId)
 {
-    if (0u < reader.getDeclCount(stateId, Declaration_Exit))
+    if (0u < reader.getDeclCount(stateId, Declaration::Exit))
     {
         return (true);
     }
     else
     {
-        for (size_t j = 0; j < reader.getTransitionCountFromStateId(stateId); j++)
+        for (auto j = 0u; j < reader.getTransitionCountFromStateId(stateId); j++)
         {
-            if (reader.getTransitionFrom(stateId, j)->event.isTimeEvent)
+            if (reader.getTransitionFrom(stateId, j)->event.is_time_event)
             {
                 return (true);
             }
@@ -1960,23 +1983,22 @@ bool Writer_t::hasExitStatement(const State_Id_t stateId)
     return (false);
 }
 
-
-std::string Writer_t::getTraceCall_entry(const State_t* state)
+std::string Writer::get_trace_call_entry(const State* state)
 {
-    return styler.getTraceEntry() + "(" + styler.getStateName(state) + ");";
+    return Style::get_trace_entry() + "(" + styler.get_state_name(state) + ");";
 }
 
-std::string Writer_t::getTraceCall_exit(const State_t* state)
+std::string Writer::get_trace_call_exit(const State* state)
 {
-    return styler.getTraceExit() + "(" + styler.getStateName(state) + ");";
+    return Style::get_trace_exit() + "(" + styler.get_state_name(state) + ");";
 }
 
-std::vector<State_t*> Writer_t::findEntryState(State_t* in)
+std::vector<State*> Writer::find_entry_state(State* in)
 {
     // this function will check if the in state contains an initial sub-state,
     // and follow the path until a state is reached that does not contain an
     // initial sub-state.
-    std::vector<State_t*> states;
+    std::vector<State*> states;
     states.push_back(in);
 
     // check if the state contains any initial sub-state
@@ -1984,25 +2006,25 @@ std::vector<State_t*> Writer_t::findEntryState(State_t* in)
     while (foundNext)
     {
         foundNext = false;
-        for (size_t i = 0; i < reader.getStateCount(); i++)
+        for (auto i = 0u; i < reader.getStateCount(); i++)
         {
-            State_t* tmp = reader.getState(i);
-            if ((in->id != tmp->id) && (in->id == tmp->parent) && (0 == tmp->name.compare("initial")))
+            auto tmp = reader.getState(i);
+            if ((in->id != tmp->id) && (in->id == tmp->parent) && ("initial" == tmp->name))
             {
                 // a child state was found that is an initial state. Get transition
                 // from this initial state, it should be one and only one.
-                Transition_t* tr = reader.getTransitionFrom(tmp->id, 0);
+                auto tr = reader.getTransitionFrom(tmp->id, 0);
                 if (nullptr == tr)
                 {
-                    errorReport("Initial state in [" + styler.getStateName(in) + "] as no transitions.", __LINE__);
+                    error_report("Initial state in [" + styler.get_state_name(in) + "] as no transitions.", __LINE__);
                 }
                 else
                 {
                     // get the transition
-                    tmp = reader.getStateById(tr->stB);
+                    tmp = reader.getStateById(tr->state_b);
                     if (nullptr == tmp)
                     {
-                        errorReport("Initial state in [" + styler.getStateName(in) + "] has no target.", __LINE__);
+                        error_report("Initial state in [" + styler.get_state_name(in) + "] has no target.", __LINE__);
                     }
                     else
                     {
@@ -2012,14 +2034,7 @@ std::vector<State_t*> Writer_t::findEntryState(State_t* in)
                         in = tmp;
 
                         // if the state is a choice, we need to stop here.
-                        if (tmp->isChoice)
-                        {
-                            foundNext = false;
-                        }
-                        else
-                        {
-                            foundNext = true;
-                        }
+                        foundNext = !tmp->is_choice;
                     }
                 }
             }
@@ -2029,12 +2044,12 @@ std::vector<State_t*> Writer_t::findEntryState(State_t* in)
     return (states);
 }
 
-std::vector<State_t*> Writer_t::findFinalState(State_t* in)
+std::vector<State*> Writer::find_final_state(State* in)
 {
     // this function will check if the in state has an outgoing transition to
     // a final state and follow the path until a state is reached that does not
     // contain an initial sub-state.
-    std::vector<State_t*> states;
+    std::vector<State*> states;
     states.push_back(in);
 
     // find parent to this state
@@ -2042,34 +2057,27 @@ std::vector<State_t*> Writer_t::findFinalState(State_t* in)
     while (foundNext)
     {
         foundNext = false;
-        for (size_t i = 0; i < reader.getStateCount(); i++)
+        for (auto i = 0u; i < reader.getStateCount(); i++)
         {
-            State_t* tmp = reader.getState(i);
-            if ((in->id != tmp->id) && (in->parent == tmp->id) && (0 != tmp->name.compare("initial")))
+            auto tmp = reader.getState(i);
+            if ((in->id != tmp->id) && (in->parent == tmp->id) && ("initial" != tmp->name))
             {
                 // a parent state was found that is not an initial state. Check for
                 // any outgoing transitions from this state to a final state. Store
                 // the id of the tmp state, since we will reuse this pointer.
-                const State_Id_t tmpId = tmp->id;
-                for (size_t j = 0; j < reader.getTransitionCountFromStateId(tmpId); j++)
+                const auto tmpId = tmp->id;
+                for (auto j = 0u; j < reader.getTransitionCountFromStateId(tmpId); j++)
                 {
-                    Transition_t* tr = reader.getTransitionFrom(tmp->id, j);
-                    tmp = reader.getStateById(tr->stB);
-                    if ((nullptr != tmp) && (0 == tmp->name.compare("final")))
+                    auto tr = reader.getTransitionFrom(tmp->id, j);
+                    tmp     = reader.getStateById(tr->state_b);
+                    if ((nullptr != tmp) && ("final" == tmp->name))
                     {
                         // recursively check the state
                         states.push_back(tmp);
                         in = tmp;
 
                         // if this state is a choice, we need to stop there.
-                        if (tmp->isChoice)
-                        {
-                            foundNext = false;
-                        }
-                        else
-                        {
-                            foundNext = true;
-                        }
+                        foundNext = !tmp->is_choice;
                     }
                 }
             }
@@ -2079,36 +2087,36 @@ std::vector<State_t*> Writer_t::findFinalState(State_t* in)
     return (states);
 }
 
-std::vector<State_t*> Writer_t::findInitState()
+std::vector<State*> Writer::find_init_state()
 {
-    std::vector<State_t*> states;
+    std::vector<State*> states;
 
-    for (size_t i = 0; i < reader.getStateCount(); i++)
+    for (auto i = 0u; i < reader.getStateCount(); i++)
     {
-        State_t* state = reader.getState(i);
-        if (0 == state->name.compare("initial"))
+        auto state = reader.getState(i);
+        if ("initial" == state->name)
         {
             // check if this is top initial state
             if (0 == state->parent)
             {
                 // this is the top initial, find transition from this idle
-                Transition_t* tr = reader.getTransitionFrom(state->id, 0);
+                auto tr = reader.getTransitionFrom(state->id, 0);
                 if (nullptr == tr)
                 {
-                    errorReport("No transition from initial state", __LINE__);
+                    error_report("No transition from initial state", __LINE__);
                 }
                 else
                 {
                     // check target state (from top)
-                    State_t* trStB = reader.getStateById(tr->stB);
+                    auto trStB = reader.getStateById(tr->state_b);
                     if (nullptr == trStB)
                     {
-                        errorReport("Transition to null state", __LINE__);
+                        error_report("Transition to null state", __LINE__);
                     }
                     else
                     {
                         // get state where it stops.
-                        states = findEntryState(trStB);
+                        states = find_entry_state(trStB);
                     }
                 }
             }
@@ -2118,17 +2126,17 @@ std::vector<State_t*> Writer_t::findInitState()
     return (states);
 }
 
-std::string Writer_t::getIndent(const size_t level)
+std::string Writer::get_indent() const
 {
-    std::string s = "";
-    for (size_t i = 0; i < level; i++)
+    std::string s {};
+    for (size_t i = 0; i < indent; i++)
     {
         s += "    ";
     }
     return (s);
 }
 
-std::string Writer_t::getIfElseIf(const size_t i)
+std::string Writer::get_if_else_if(const size_t i)
 {
     std::string s = "if";
     if (0 != i)
