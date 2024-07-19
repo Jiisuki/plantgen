@@ -3,3 +3,5 @@ src-gen/
 build/
 cmake-build-debug/
 .idea/
+.gitmessage
+
