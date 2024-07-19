@@ -4,80 +4,107 @@
 
 #pragma once
 
+#include "reader.hpp"
+#include "style.hpp"
 #include <fstream>
-#include <reader.hpp>
-#include <style.hpp>
 
-typedef struct
+///\brief Configuration for the code generator.
+struct WriterConfig
 {
+    ///\brief Verbose output, mostly for debugging.
     bool verbose;
-    bool doTracing;
-    bool useSimpleNames;
-    bool parentFirstExecution;
-} Writer_Config_t;
 
-class Writer_t
-{
-private:
-    Writer_Config_t config;
-    std::ofstream out_c;
-    std::ofstream out_h;
-    Reader_t* reader;
-    Style_t* styler;
-    void proto_runCycle(void);
-    void proto_entryAction(void);
-    void proto_exitAction(void);
-    void proto_raiseInEvent(void);
-    void proto_raiseOutEvent(void);
-    void proto_raiseInternalEvent(void);
-    void proto_timeTick(void);
-    void proto_checkOutEvent(void);
-    void proto_clearEvents(void);
-    void proto_getVariable(void);
-    void proto_traceEntry(void);
-    void proto_traceExit(void);
-    void decl_stateList(void);
-    void decl_eventList(void);
-    void decl_variableList(void);
-    void decl_stateMachine(void);
-    void impl_init(std::vector<State_t*> firstState);
-    void impl_raiseInEvent(void);
-    void impl_raiseOutEvent(void);
-    void impl_raiseInternalEvent(void);
-    void impl_checkOutEvent(void);
-    void impl_getVariable(void);
-    void impl_timeTick(void);
-    void impl_clearEvents(void);
-    void impl_topRunCycle(void);
-    void impl_runCycle(void);
-    void impl_entryAction(void);
-    void impl_exitAction(void);
-    std::vector<std::string> tokenize(std::string str);
-    void parseDeclaration(const std::string declaration);
-    std::string parseGuard(const std::string guardStrRaw);
-    void parseChoicePath(State_t* initialChoice, size_t indentLevel);
-    std::vector<State_t*> getChildStates(State_t* currentState);
-    bool parseChildExits(State_t* currentState, size_t indentLevel, const State_Id_t topState, const bool didPreviousWrite);
-    bool hasEntryStatement(const State_Id_t stateId);
-    bool hasExitStatement(const State_Id_t stateId);
-    std::string getTraceCall_entry(const State_t* state);
-    std::string getTraceCall_exit(const State_t* state);
-    std::vector<State_t*> findInitState(void);
-    std::vector<State_t*> findEntryState(State_t* in);
-    std::vector<State_t*> findFinalState(State_t* in);
-    std::string getIndent(const size_t level);
-    std::string getIfElseIf(const size_t i);
-    void errorReport(std::string str, unsigned int line);
+    ///\brief If true, enable tracing functionality for state entry/exit.
+    bool do_tracing;
 
-public:
-    Writer_t();
-    ~Writer_t();
-    void generateCode(const std::string filename, const std::string outdir);
-    void enableVerbose(void);
-    void enableSimpleNames(void);
-    void enableTracing(void);
-    void enableParentFirstExecution(void);
+    ///\brief Use the short state name instead of nested names.
+    bool use_simple_names;
+
+    ///\brief Execution scheme, if true, outermost transition is always taken first.
+    bool parent_first_execution;
+
+    WriterConfig() : verbose(), do_tracing(), use_simple_names(), parent_first_execution() {}
+    ~WriterConfig() = default;
 };
 
+class Writer
+{
+  private:
+    WriterConfig config;
+    std::string  filename;
+    std::string  outdir;
+    Reader       reader;
+    Style        styler;
+    size_t       indent;
 
+    ///\brief Start the namespace tag using the model name as the namespace.
+    void start_namespace(std::ofstream& out);
 
+    ///\brief Finishes the namespace.
+    void end_namespace(std::ofstream& out);
+
+    ///\brief Write the declaration of the model states.
+    void decl_state_list(std::ofstream& out);
+
+    ///\brief Write the declaration of the model events.
+    void decl_event_list(std::ofstream& out);
+
+    ///\brief Write the declaration of the model variables.
+    void decl_variable_list(std::ofstream& out);
+
+    ///\brief Write the declaration of the tracing functions.
+    void decl_tracing_callback(std::ofstream& out);
+
+    ///\brief Write the declaration of the state machine.
+    void decl_state_machine(std::ofstream& out);
+
+    ///\brief Write the implementation of the init function.
+    void impl_init(std::ofstream& out, const std::vector<State*>& first_state);
+
+    ///\brief Write the implementation of all raise in event functions.
+    void impl_raise_in_event(std::ofstream& out);
+
+    ///\brief Write the implementation of all raise out event functions.
+    void impl_raise_out_event(std::ofstream& out);
+
+    ///\brief Write the implementation of all raise internal event functions.
+    void impl_raise_internal_event(std::ofstream& out);
+
+    void impl_check_out_event(std::ofstream& out);
+    void impl_get_variable(std::ofstream& out);
+    void impl_time_tick(std::ofstream& out);
+    void impl_top_run_cycle(std::ofstream& out);
+    void impl_trace_calls(std::ofstream& out);
+    void impl_run_cycle(std::ofstream& out);
+    void impl_entry_action(std::ofstream& out);
+    void impl_exit_action(std::ofstream& out);
+
+    static std::vector<std::string> tokenize(const std::string& str);
+    void                            parse_declaration(std::ofstream& out, const std::string& declaration);
+    std::string                     parse_guard(const std::string& guardStrRaw);
+    void                            parse_choice_path(std::ofstream& out, State* initialChoice);
+
+    std::vector<State*> get_child_states(State* currentState);
+    bool parse_child_exits(std::ofstream& out, State* currentState, StateId topState, bool didPreviousWrite);
+
+    bool has_entry_statement(StateId stateId);
+    bool has_exit_statement(StateId stateId);
+
+    std::string         get_trace_call_entry(const State* state);
+    std::string         get_trace_call_exit(const State* state);
+    std::vector<State*> find_init_state();
+    std::vector<State*> find_entry_state(State* in);
+    std::vector<State*> find_final_state(State* in);
+    std::string         get_indent() const;
+    static std::string         get_if_else_if(size_t i);
+
+    static void error_report(const std::string& str, unsigned int line);
+    void        increase_indent();
+    void        decrease_indent();
+    void        reset_indent();
+
+  public:
+    Writer(const std::string& filename, const std::string& outdir, const WriterConfig& cfg);
+    ~Writer() = default;
+    void generateCode();
+};

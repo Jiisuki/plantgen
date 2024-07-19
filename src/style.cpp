@@ -2,124 +2,149 @@
  *  @brief Implementation of the styling class.
  */
 
-#include "style.hpp"
+#include "../include/style.hpp"
+#include <algorithm>
+#include <cctype>
 #include <string>
-#include <reader.hpp>
 
-Style_t::Style_t(Reader_t* reader)
+Style::Style(Reader& reader) : reader(reader), use_simple_names(false)
 {
-    this->reader = reader;
-    this->useSimpleNames = false;
 }
 
-Style_t::~Style_t()
+void Style::set_simple_names(bool enable)
 {
-    /* It is not up to us to cleanup. */
+    use_simple_names = enable;
 }
 
-void Style_t::enableSimpleNames(void)
+std::string Style::get_state_base_decl(const State* state)
 {
-    this->useSimpleNames = true;
-}
+    std::string decl_base {};
 
-void Style_t::disableSimpleNames(void)
-{
-    this->useSimpleNames = false;
-}
-
-std::string Style_t::appendModelName(const std::string str)
-{
-    return (this->reader->getModelName() + "_" + str);
-}
-
-std::string Style_t::getStateBaseDecl(const State_t* state)
-{
-    std::string decl_base = "";
-
-    if (true != this->useSimpleNames)
+    if (!use_simple_names)
     {
-        State_t* parent = reader->getStateById(state->parent);
-        if (NULL != parent)
+        auto parent = reader.getStateById(state->parent);
+        if (nullptr != parent)
         {
-            decl_base = getStateBaseDecl(parent) + "_";
+            decl_base = get_state_base_decl(parent) + "_";
         }
     }
 
-    /* Add first letter upper-case. */
-    decl_base += std::toupper(state->name[0]);
-    /* Add rest as is. */
-    decl_base += state->name.substr(1);
-    //decl_base += state->name;
+    decl_base += state->name;
+    decl_base = convert_snake_case(decl_base);
 
     return (decl_base);
 }
 
-std::string Style_t::getTopRunCycle(void)
+std::string Style::convert_snake_case(const std::string& str)
 {
-    return (this->appendModelName("runCycle"));
+    std::string snake_case {};
+    for (unsigned char ch : str)
+    {
+        if (std::isupper(ch))
+        {
+            if (!snake_case.empty())
+            {
+                snake_case += '_';
+            }
+            snake_case += std::tolower(ch);
+        }
+        else
+        {
+            snake_case += ch;
+        }
+    }
+    return snake_case;
 }
 
-std::string Style_t::getStateRunCycle(const State_t* state)
+void Style::transform_lower(std::string& str)
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_react"));
+    /* Convert string to lower case, and any CamelCase to snake_case. */
+    std::transform(
+            str.begin(),
+            str.end(),
+            str.begin(),
+            [](unsigned char c)
+            {
+                return std::tolower(c);
+            });
 }
 
-std::string Style_t::getStateEntry(const State_t* state)
+std::string Style::get_top_run_cycle()
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_entryAction"));
+    return "run_cycle";
 }
 
-std::string Style_t::getStateExit(const State_t* state)
+std::string Style::get_state_run_cycle(const State* state)
 {
-    return (this->appendModelName(this->getStateBaseDecl(state) + "_exitAction"));
+    return "state_" + convert_snake_case(get_state_base_decl(state)) + "_react";
 }
 
-std::string Style_t::getStateName(const State_t* state)
+std::string Style::get_state_entry(const State* state)
 {
-    return (this->appendModelName("State_" + this->getStateBaseDecl(state)));
+    return "state_" + convert_snake_case(get_state_base_decl(state)) + "_entry_action";
 }
 
-std::string Style_t::getStateType(void)
+std::string Style::get_state_exit(const State* state)
 {
-    return (this->appendModelName("State_t"));
+    return "state_" + convert_snake_case(get_state_base_decl(state)) + "_exit_action";
 }
 
-std::string Style_t::getEventRaise(const Event_t* event)
+std::string Style::get_state_name(const State* state)
 {
-    return (this->appendModelName("raise_" + event->name));
+    return get_state_type() + "::" + convert_snake_case(get_state_base_decl(state));
 }
 
-std::string Style_t::getEventRaise(const std::string eventName)
+std::string Style::get_state_name_pure(const State* state)
 {
-    return (this->appendModelName("raise_" + eventName));
+    return get_state_base_decl(state);
 }
 
-std::string Style_t::getHandleType(void)
+std::string Style::get_state_type()
 {
-    return (this->appendModelName("Handle_t"));
+    return "State";
 }
 
-std::string Style_t::getTimeTick(void)
+std::string Style::get_event_raise(const Event* event)
 {
-    return (this->appendModelName("_timeTick"));
+    return "raise_" + convert_snake_case(event->name);
 }
 
-std::string Style_t::getEventIsRaised(const Event_t* event)
+std::string Style::get_event_raise(const std::string& eventName)
 {
-    return (this->appendModelName("is_" + event->name + "_raised"));
+    return "raise_" + convert_snake_case(eventName);
 }
 
-std::string Style_t::getVariable(const Variable_t* var)
+std::string Style::get_event_name(const Event* event)
 {
-    return (this->appendModelName("get_" + var->name));
+    return convert_snake_case(event->name);
 }
 
-std::string Style_t::getTraceEntry(void)
+std::string Style::get_time_tick()
 {
-    return (this->appendModelName("traceEntry"));
+    return "time_tick";
 }
 
-std::string Style_t::getTraceExit(void)
+std::string Style::get_event_is_raised(const Event* event)
 {
-    return (this->appendModelName("traceExit"));
+    return "is_" + convert_snake_case(event->name) + "_raised";
+}
+
+std::string Style::get_event_value(const Event* event)
+{
+    return convert_snake_case(event->name) + "_value";
+}
+
+std::string Style::get_variable_name(const Variable* var)
+{
+    return convert_snake_case(var->name);
+}
+
+std::string Style::get_trace_entry()
+{
+    return "trace_state_enter";
+}
+
+std::string Style::get_trace_exit()
+{
+    return "trace_state_exit";
 }

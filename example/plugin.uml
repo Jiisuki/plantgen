@@ -3,7 +3,6 @@ scale 0.75
 
 header
 model Plugin
-import local example.h
 private var canGetData : bool
 endheader
 

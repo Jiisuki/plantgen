@@ -1,9 +1,5 @@
-.settings/
-.ycm_extra_conf.py
-Default/
 bin/
 src-gen/
-testbin/
 build/
-Debug/
-documentation/
+cmake-build-debug/
+.idea/
