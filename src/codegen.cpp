@@ -7,8 +7,8 @@
 #include <iostream>
 #include <vector>
 
-#include "../include/reader.hpp"
-#include "../include/writer.hpp"
+#include "uml_parser.hpp"
+#include "writer.hpp"
 
 void configure_default(WriterConfig& cfg, std::string& out)
 {

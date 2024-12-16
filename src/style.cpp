@@ -7,7 +7,7 @@
 #include <cctype>
 #include <string>
 
-Style::Style(Reader& reader) : reader(reader), use_simple_names(false)
+Style::Style(UML::Parser::SharedPtr _parser) : parser(_parser), use_simple_names(false)
 {
 }
 
@@ -16,16 +16,16 @@ void Style::set_simple_names(bool enable)
     use_simple_names = enable;
 }
 
-std::string Style::get_state_base_decl(const State* state)
+std::string Style::get_state_base_decl(UML::StatePtr state)
 {
     std::string decl_base {};
 
     if (!use_simple_names)
     {
-        auto parent = reader.getStateById(state->parent);
-        if (nullptr != parent)
+        if (!state->parent.empty())
         {
-            decl_base = get_state_base_decl(parent) + "_";
+            auto parent = parser->get_state(state->parent);
+            decl_base   = get_state_base_decl(parent) + "_";
         }
     }
 
@@ -74,27 +74,27 @@ std::string Style::get_top_run_cycle()
     return "run_cycle";
 }
 
-std::string Style::get_state_run_cycle(const State* state)
+std::string Style::get_state_run_cycle(UML::StatePtr state)
 {
     return "state_" + convert_snake_case(get_state_base_decl(state)) + "_react";
 }
 
-std::string Style::get_state_entry(const State* state)
+std::string Style::get_state_entry(UML::StatePtr state)
 {
     return "state_" + convert_snake_case(get_state_base_decl(state)) + "_entry_action";
 }
 
-std::string Style::get_state_exit(const State* state)
+std::string Style::get_state_exit(UML::StatePtr state)
 {
     return "state_" + convert_snake_case(get_state_base_decl(state)) + "_exit_action";
 }
 
-std::string Style::get_state_name(const State* state)
+std::string Style::get_state_name(UML::StatePtr state)
 {
     return get_state_type() + "::" + convert_snake_case(get_state_base_decl(state));
 }
 
-std::string Style::get_state_name_pure(const State* state)
+std::string Style::get_state_name_pure(UML::StatePtr state)
 {
     return get_state_base_decl(state);
 }
@@ -104,7 +104,7 @@ std::string Style::get_state_type()
     return "State";
 }
 
-std::string Style::get_event_raise(const Event* event)
+std::string Style::get_event_raise(UML::EventPtr event)
 {
     return "raise_" + convert_snake_case(event->name);
 }
@@ -114,7 +114,7 @@ std::string Style::get_event_raise(const std::string& eventName)
     return "raise_" + convert_snake_case(eventName);
 }
 
-std::string Style::get_event_name(const Event* event)
+std::string Style::get_event_name(UML::EventPtr event)
 {
     return convert_snake_case(event->name);
 }
@@ -124,17 +124,17 @@ std::string Style::get_time_tick()
     return "time_tick";
 }
 
-std::string Style::get_event_is_raised(const Event* event)
+std::string Style::get_event_is_raised(UML::EventPtr event)
 {
     return "is_" + convert_snake_case(event->name) + "_raised";
 }
 
-std::string Style::get_event_value(const Event* event)
+std::string Style::get_event_value(UML::EventPtr event)
 {
     return convert_snake_case(event->name) + "_value";
 }
 
-std::string Style::get_variable_name(const Variable* var)
+std::string Style::get_variable_name(UML::VariablePtr var)
 {
     return convert_snake_case(var->name);
 }
