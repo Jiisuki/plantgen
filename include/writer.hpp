@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "reader.hpp"
 #include "style.hpp"
+#include "uml_parser.hpp"
 #include <fstream>
 
 ///\brief Configuration for the code generator.
@@ -33,9 +33,10 @@ class Writer
     WriterConfig config;
     std::string  filename;
     std::string  outdir;
-    Reader       reader;
-    Style        styler;
     size_t       indent;
+
+    UML::Parser::SharedPtr parser;
+    Style::SharedPtr       styler;
 
     ///\brief Start the namespace tag using the model name as the namespace.
     void start_namespace(std::ofstream& out);
@@ -59,7 +60,7 @@ class Writer
     void decl_state_machine(std::ofstream& out);
 
     ///\brief Write the implementation of the init function.
-    void impl_init(std::ofstream& out, const std::vector<State*>& first_state);
+    void impl_init(std::ofstream& out, const std::vector<UML::StatePtr>& first_state);
 
     ///\brief Write the implementation of all raise in event functions.
     void impl_raise_in_event(std::ofstream& out);
@@ -82,20 +83,21 @@ class Writer
     static std::vector<std::string> tokenize(const std::string& str);
     void                            parse_declaration(std::ofstream& out, const std::string& declaration);
     std::string                     parse_guard(const std::string& guardStrRaw);
-    void                            parse_choice_path(std::ofstream& out, State* initialChoice);
+    void                            parse_choice_path(std::ofstream& out, UML::StatePtr initialChoice);
 
-    std::vector<State*> get_child_states(State* currentState);
-    bool parse_child_exits(std::ofstream& out, State* currentState, StateId topState, bool didPreviousWrite);
+    std::vector<UML::StatePtr> get_child_states(UML::StatePtr currentState);
+    bool                       parse_child_exits(
+                                  std::ofstream& out, UML::StatePtr currentState, UML::StatePtr topState, bool didPreviousWrite);
 
-    bool has_entry_statement(StateId stateId);
-    bool has_exit_statement(StateId stateId);
+    bool has_entry_statement(UML::StatePtr state);
+    bool has_exit_statement(UML::StatePtr state);
 
-    std::string         get_trace_call_entry(const State* state);
-    std::string         get_trace_call_exit(const State* state);
-    std::vector<State*> find_init_state();
-    std::vector<State*> find_entry_state(State* in);
-    std::vector<State*> find_final_state(State* in);
-    std::string         get_indent() const;
+    std::string                get_trace_call_entry(UML::StatePtr state) const;
+    std::string                get_trace_call_exit(UML::StatePtr state) const;
+    std::vector<UML::StatePtr> find_init_state();
+    std::vector<UML::StatePtr> find_entry_state(UML::StatePtr in);
+    std::vector<UML::StatePtr> find_final_state(UML::StatePtr in);
+    [[nodiscard]] std::string  get_indent() const;
     static std::string         get_if_else_if(size_t i);
 
     static void error_report(const std::string& str, unsigned int line);
